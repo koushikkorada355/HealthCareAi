@@ -70,6 +70,10 @@ class Appointment(Base):
     conversation_id: Mapped[int | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Concurrency: uq_doctor_slot blocks exact-start duplicates at the DB level.
+    # Overlapping ranges (10:00-10:30 vs 10:15-10:45) are additionally blocked by
+    # Postgres exclusion constraint excl_doctor_no_overlap (see app/db/exclusion.py,
+    # created idempotently on boot for postgresql/Neon, skipped on SQLite).
     __table_args__ = (UniqueConstraint("doctor_id", "starts_at", name="uq_doctor_slot"),)
 
 class AppointmentHistory(Base):

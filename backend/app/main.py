@@ -14,6 +14,13 @@ logger = logging.getLogger("careaccess")
 async def lifespan(app: FastAPI):
     from . import models  # noqa: ensure registered
     Base.metadata.create_all(bind=engine)
+    # Option A concurrency guard: overlapping-range exclusion (Postgres/Neon only,
+    # idempotent, skipped on SQLite). Never blocks boot on failure.
+    try:
+        from .db.exclusion import ensure_exclusion
+        ensure_exclusion(engine)
+    except Exception:
+        logger.exception("exclusion constraint setup failed")
     if os.getenv("SEED_ON_STARTUP", str(settings.SEED_ON_STARTUP)).lower() in ("1", "true", "yes"):
         try:
             from .db.session import SessionLocal
