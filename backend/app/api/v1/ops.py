@@ -151,13 +151,23 @@ def ops_events(severity: str = "", db: Session = Depends(get_db), u=Depends(get_
 
 @router.get("/activity")
 def activity(db: Session = Depends(get_db), u=Depends(get_current_user)):
-    """Hospital activity feed: audits + ops events for the caller's hospital.
+    """Activity feed: audits + ops events.
 
-    Covers: doctor added/updated/activated, availability/calendar changes,
-    questionnaire create/update, workflow changes, integration changes, reviews.
+    Platform: everything. Hospital admin: own hospital. Doctor: only rows
+    touching them (own actions, own doctor record, own appointments).
     """
-    if u.role not in ("platform_admin", "hospital_admin"): raise HTTPException(403)
+    if u.role not in ("platform_admin", "hospital_admin", "doctor"): raise HTTPException(403)
     hid = u.hospital_id
+    if u.role == "doctor":
+        own_appts = [r[0] for r in db.query(models.Appointment.id).filter(models.Appointment.doctor_id == u.doctor_id).all()] if u.doctor_id else []
+        aq = db.query(models.AuditEvent).filter(
+            (models.AuditEvent.actor_user_id == u.id) |
+            ((models.AuditEvent.entity_type == "doctor") & (models.AuditEvent.entity_id == u.doctor_id)) |
+            ((models.AuditEvent.entity_type == "appointment") & (models.AuditEvent.entity_id.in_(own_appts) if own_appts else False))
+        ).order_by(models.AuditEvent.id.desc())
+        acts = [{"at": a.created_at.isoformat() if a.created_at else None, "kind": "audit", "text": f"{a.action} · {a.entity_type} #{a.entity_id or ''}".strip(), "actor": a.actor_user_id, "corr": a.correlation_id} for a in aq.limit(100).all()]
+        acts.sort(key=lambda x: x["at"] or "", reverse=True)
+        return acts[:120]
     aq = db.query(models.AuditEvent).order_by(models.AuditEvent.id.desc())
     oq = db.query(models.OperationalEvent).order_by(models.OperationalEvent.id.desc())
     if u.role == "hospital_admin" and hid:

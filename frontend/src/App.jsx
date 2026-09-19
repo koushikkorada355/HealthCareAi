@@ -9,7 +9,7 @@ import Voice from './pages/patient/Voice.jsx'
 import { Hospitals, Doctors, Slots } from './pages/patient/Discovery.jsx'
 import { BookFind, BookSlots } from './pages/patient/Book.jsx'
 import { Upcoming, History, Detail, Questionnaires, QFill, Prefs, Profile } from './pages/patient/Appts.jsx'
-import { Dash as DocDash, ApptList, Calendar, Availability, ApptDetail } from './pages/doctor/Doctor.jsx'
+import { Dash as DocDash, ApptList, Calendar, Availability, ApptDetail, Profile as DocProfile, Questionnaires as DocQ, Activity as DocAct } from './pages/doctor/Doctor.jsx'
 import { Dash as HDash, Profile as HProfile, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, AIActivity as HAI, Integrations as HInt, Workflows as HWf, Notifications, Reviews as HRev, Activity as HAct, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
 import { Dash as ADash, Applications, ApplicationDetail, TablePage, AIActivity as AAI, Analytics as AAn, OpsHealth } from './pages/admin/Admin.jsx'
 
@@ -45,12 +45,15 @@ export default function App() {
 
       {/* doctor */}
       <Route path="/doctor" element={<Require roles={['doctor']}><DocDash /></Require>} />
+      <Route path="/doctor/profile" element={<Require roles={['doctor']}><DocProfile /></Require>} />
       <Route path="/doctor/today" element={<Require roles={['doctor']}><ApptList title="Today's appointments" filter={isToday} /></Require>} />
       <Route path="/doctor/upcoming" element={<Require roles={['doctor']}><ApptList title="Upcoming appointments" filter={isUpcoming} /></Require>} />
       <Route path="/doctor/appointments" element={<Require roles={['doctor']}><ApptList title="All appointments" /></Require>} />
       <Route path="/doctor/appointments/:id" element={<Require roles={['doctor']}><ApptDetail /></Require>} />
       <Route path="/doctor/calendar" element={<Require roles={['doctor']}><Calendar /></Require>} />
       <Route path="/doctor/availability" element={<Require roles={['doctor']}><Availability /></Require>} />
+      <Route path="/doctor/questionnaires" element={<Require roles={['doctor']}><DocQ /></Require>} />
+      <Route path="/doctor/activity" element={<Require roles={['doctor']}><DocAct /></Require>} />
 
       {/* hospital admin */}
       <Route path="/hospital" element={<Require roles={['hospital_admin']}><HDash /></Require>} />

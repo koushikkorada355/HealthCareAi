@@ -186,6 +186,10 @@ def create_blocked(body: dict, db: Session = Depends(get_db), u=Depends(get_curr
         raise HTTPException(400, "starts_at/ends_at must be ISO-8601 datetimes")
     if b.ends_at <= b.starts_at:
         raise HTTPException(400, "ends_at must be after starts_at")
+    cal = db.query(models.Calendar).filter(models.Calendar.id==body["calendar_id"]).first()
+    if cal:
+        clash = db.query(models.Appointment).filter(models.Appointment.doctor_id==cal.doctor_id, models.Appointment.starts_at < b.ends_at, models.Appointment.ends_at > b.starts_at, models.Appointment.status.in_(["pending","confirmed","rescheduled"])).first()
+        if clash: raise HTTPException(400, "That period has a booked visit — reschedule or cancel it first")
     db.add(b); db.commit(); db.refresh(b)
     audit(db, "schedule.block", "blocked_slot", b.id, None, u.id, body, ""); return {"id": b.id}
 

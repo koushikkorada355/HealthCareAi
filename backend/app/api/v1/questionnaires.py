@@ -69,9 +69,17 @@ def get_q(qid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
 def list_r(patient_id: int | None = None, appointment_id: int | None = None, questionnaire_id: int | None = None, status: str = "", db: Session = Depends(get_db), u=Depends(get_current_user)):
     q = db.query(models.QuestionnaireResponse)
     if u.role=="patient": q = q.filter(models.QuestionnaireResponse.patient_id==u.patient_id)
+    elif u.role == "doctor":
+        # Doctors see only their own appointments' responses (all filters kept).
+        if not u.doctor_id: q = q.filter(False)
+        else:
+            q = q.join(models.Appointment, models.Appointment.id==models.QuestionnaireResponse.appointment_id).filter(models.Appointment.doctor_id==u.doctor_id)
+            if appointment_id: q = q.filter(models.QuestionnaireResponse.appointment_id==appointment_id)
+            if questionnaire_id: q = q.filter(models.QuestionnaireResponse.questionnaire_id==questionnaire_id)
     else:
         # Isolation: hospital staff see only their own hospital's responses.
-        if u.role in ("hospital_admin", "doctor") and u.hospital_id:
+        if u.role == "hospital_admin" and not u.hospital_id: q = q.filter(False)
+        elif u.role in ("hospital_admin", "doctor") and u.hospital_id:
             q = q.join(models.Questionnaire, models.Questionnaire.id==models.QuestionnaireResponse.questionnaire_id).filter(models.Questionnaire.hospital_id==u.hospital_id)
         if patient_id: q = q.filter(models.QuestionnaireResponse.patient_id==patient_id)
         if appointment_id: q = q.filter(models.QuestionnaireResponse.appointment_id==appointment_id)

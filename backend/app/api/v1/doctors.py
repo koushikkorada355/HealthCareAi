@@ -96,6 +96,20 @@ def patch_d(did: int, body: dict, db: Session = Depends(get_db), u=Depends(get_c
     if u.role=="hospital_admin" and u.hospital_id!=d.hospital_id: raise HTTPException(403)
     if u.role=="doctor" and u.doctor_id!=did: raise HTTPException(403)
     if u.role not in ("platform_admin","hospital_admin","doctor"): raise HTTPException(403)
+    if u.role == "doctor":
+        # Doctors manage permitted profile info only. Hospital-controlled
+        # fields (status, specialty, department, name, external ID) stay admin-only.
+        allowed = {}
+        for k in ("qualifications", "languages", "consultation_types"):
+            if k in body: allowed[k] = body[k]
+        for k in ("experience_years", "duration_minutes"):
+            if k in body:
+                try: allowed[k] = int(body[k])
+                except (TypeError, ValueError): raise HTTPException(400, f"{k} must be a number")
+        for k, v in allowed.items():
+            setattr(d, k, json.dumps(v) if k in ("languages", "consultation_types") else v)
+        db.commit(); audit(db, "doctor.update.self", "doctor", did, d.hospital_id, u.id, {"fields": sorted(allowed)}, "")
+        return {"ok": True}
     for k in ("name","qualifications","experience_years","duration_minutes","status","external_provider_id"):
         if k in body: setattr(d, k, body[k])
     if "specialty_id" in body:
