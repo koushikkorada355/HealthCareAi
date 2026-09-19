@@ -63,6 +63,12 @@ export function BookFind() {
 
   const findDoctors = () => {
     if (!problem.trim()) { setIntakeErr('Please describe your problem in a few words first — e.g. "shoulder pain since last week".'); return }
+    // Gibberish guard: text matching no known symptom/specialty with no manual
+    // chip pick must not degrade to "browse everything" — ask to pick or rephrase.
+    if (spec === 'All' && !specTouched && !detectSpec(problem)) {
+      setIntakeErr(`Sorry, we couldn't match “${problem.trim().slice(0, 60)}” to a specialty — pick one under question 2 or rephrase (e.g. joint pain, rash, fever).`)
+      return
+    }
     try {
       sessionStorage.setItem('book_intake', JSON.stringify({ problem: problem.trim(), specialty: spec === 'All' ? '' : spec, hospId, dayPref }))
     } catch { /* private mode — intake just won't carry over */ }
