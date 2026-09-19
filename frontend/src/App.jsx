@@ -7,7 +7,9 @@ import Home from './pages/patient/Home.jsx'
 import Assistant from './pages/patient/Assistant.jsx'
 import Voice from './pages/patient/Voice.jsx'
 import { Hospitals, Doctors, Slots } from './pages/patient/Discovery.jsx'
+import HospitalDetail from './pages/patient/HospitalDetail.jsx'
 import { BookFind, BookSlots } from './pages/patient/Book.jsx'
+import BookConfirm from './pages/patient/BookConfirm.jsx'
 import { Upcoming, History, Detail, Questionnaires, QFill, Prefs, Profile } from './pages/patient/Appts.jsx'
 import { Dash as DocDash, ApptList, Calendar, Availability, ApptDetail, Profile as DocProfile, Questionnaires as DocQ, Activity as DocAct } from './pages/doctor/Doctor.jsx'
 import { Dash as HDash, Profile as HProfile, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, AIActivity as HAI, Integrations as HInt, Workflows as HWf, Notifications, Reviews as HRev, Activity as HAct, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
@@ -30,11 +32,13 @@ export default function App() {
       <Route path="/app/assistant" element={<Require roles={['patient']}><Assistant /></Require>} />
       <Route path="/app/voice" element={<Require roles={['patient']}><Voice /></Require>} />
       <Route path="/app/hospitals" element={<Require roles={['patient']}><Hospitals /></Require>} />
+      <Route path="/app/hospitals/:id" element={<Require roles={['patient']}><HospitalDetail /></Require>} />
       <Route path="/app/doctors" element={<Require roles={['patient']}><Doctors /></Require>} />
       <Route path="/app/doctors/:id/slots" element={<Require roles={['patient']}><Slots /></Require>} />
       {/* creative 2-page booking flow: Page 1 find → Page 2 slots+confirm */}
       <Route path="/app/book" element={<Require roles={['patient']}><BookFind /></Require>} />
       <Route path="/app/book/:id" element={<Require roles={['patient']}><BookSlots /></Require>} />
+      <Route path="/app/book/:id/confirm" element={<Require roles={['patient']}><BookConfirm /></Require>} />
       <Route path="/app/upcoming" element={<Require roles={['patient']}><Upcoming /></Require>} />
       <Route path="/app/history" element={<Require roles={['patient']}><History /></Require>} />
       <Route path="/app/appointments/:id" element={<Require roles={['patient']}><Detail /></Require>} />

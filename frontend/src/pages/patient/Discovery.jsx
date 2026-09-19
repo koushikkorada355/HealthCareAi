@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client.js'
 import { Card, PageHead, Avatar, Cover, Pill } from '../../components/ui.jsx'
 import { hospitalCover } from '../../utils/photos.js'
+import SlotPicker from './SlotPicker.jsx'
 
 export function Hospitals() {
   const [rows, setRows] = useState([]); const [q, setQ] = useState(''); const [city, setCity] = useState('')
@@ -22,17 +23,17 @@ export function Hospitals() {
     </div>
     <div className="grid md:grid-cols-2 gap-4">{list.map(h => (
       <Card key={h.id} className="card-hover !p-0 overflow-hidden">
-        <Cover src={h.cover_url || hospitalCover(h.slug)} height={140}>
+        <Link to={`/app/hospitals/${h.id}`}><Cover src={h.cover_url || hospitalCover(h.slug)} height={140}>
           <div className="flex items-end justify-between gap-2">
             <span className="font-display text-lg font-semibold text-white drop-shadow">{h.name}</span>
             <Pill value={h.status} />
           </div>
-        </Cover>
+        </Cover></Link>
         <div className="p-5 pt-3">
           <div className="text-sm text-ink-soft">{h.city} · {h.address} · {h.doctor_count ?? 0} doctors · ★ {h.avg_rating ?? 0} ({h.review_count ?? 0} reviews)</div>
           <div className="mt-3 flex gap-2">
-            <Link to={`/app/doctors?hospital_id=${h.id}`} className="btn-primary text-sm">View doctors →</Link>
-            <Link to="/app/book" className="btn-ghost text-sm">Quick book</Link>
+            <Link to={`/app/hospitals/${h.id}`} className="btn-primary text-sm">Open hospital →</Link>
+            <Link to={`/app/doctors?hospital_id=${h.id}`} className="btn-ghost text-sm">View doctors</Link>
           </div>
         </div>
       </Card>))}</div></div>
@@ -57,41 +58,17 @@ export function Doctors() {
 }
 export function Slots() {
   const { id } = useParams()
-  const [slots, setSlots] = useState([]); const [doc, setDoc] = useState(null); const [busy, setBusy] = useState(null); const [msg, setMsg] = useState('')
-  const [selected, setSelected] = useState(null); const [reason, setReason] = useState(''); const [mode, setMode] = useState('in_person')
-  const load = () => { api(`/doctors/${id}`).then(setDoc).catch(() => {}); api(`/availability?doctor_id=${id}&days_ahead=7`).then(r => setSlots(r.slots || [])).catch(() => {}) }
-  useEffect(load, [id])
-  const book = async () => {
-    if (!selected || !reason.trim()) { setMsg('Pick a slot and tell us the reason for your visit first.'); return }
-    const s = selected
-    setBusy(`${s.calendar_id}-${s.starts_at}`); setMsg('')
-    try {
-      const me = await api('/auth/me')
-      if (!doc) throw new Error('Doctor details are still loading — please retry.')
-      const r = await api('/appointments', { method: 'POST', body: { hospital_id: doc.hospital_id, doctor_id: doc.id, patient_id: me.patient_id, starts_at: s.starts_at, ends_at: s.ends_at, calendar_id: s.calendar_id, mode, reason: reason.trim(), idempotency_key: `web-${me.id}-${doc.id}-${s.starts_at}-${Date.now().toString(36)}` } })
-      setMsg(`Confirmed! #${r.appointment_id} verified (${r.correlation_id}).`)
-      setSelected(null); setReason('')
-      load()
-    } catch (e) { setMsg(`Could not book: ${e.message}`) } finally { setBusy(null) }
+  const nav = useNavigate()
+  const [doc, setDoc] = useState(null); const [loading, setLoading] = useState(true)
+  useEffect(() => { api(`/doctors/${id}`).then(setDoc).catch(() => {}).finally(() => setLoading(false)) }, [id])
+  const goConfirm = (slot, mode) => {
+    const q = new URLSearchParams({ starts_at: slot.starts_at, ends_at: slot.ends_at, calendar_id: slot.calendar_id, mode })
+    nav(`/app/book/${id}/confirm?${q}`, { state: { slot, mode } })
   }
-  return <div><PageHead title={doc ? doc.name : 'Availability'} sub="Real slots from the scheduling engine — never invented. Select a slot, add details, then confirm." />
-    {msg && <div className="card p-3 mb-3 text-sm bg-emerald-50">{msg}</div>}
-    {doc && <Card className="mb-4 flex gap-4"><Avatar name={doc.name} size={64} photo={doc.photo_url} seed={doc.id} plain={false} /><div className="text-sm"><div className="font-bold text-base">{doc.name} · ★ {doc.rating} ({doc.review_count ?? 0} reviews)</div><div className="text-ink-soft">{doc.specialty} · {doc.hospital_name}{doc.hospital_city ? ` (${doc.hospital_city})` : ''} · {doc.experience_years}y exp · {doc.qualifications}</div><div className="text-ink-soft">Languages: {doc.languages} · {doc.completed_visits ?? 0} completed visits · No patient reviews yet</div></div></Card>}
-    {selected && <div className="card p-4 mb-3 !border-brand/25 animate-fade-up">
-      <div className="text-sm"><b>Selected:</b> {new Date(selected.starts_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-        <button type="button" onClick={() => setSelected(null)} className="ml-2 font-bold text-brand-deep underline">change</button></div>
-      <div className="mt-2 grid gap-2 md:grid-cols-[1fr_180px_auto]">
-        <label htmlFor="slot-reason" className="sr-only">Reason for visit</label>
-        <input id="slot-reason" className="input" placeholder="Reason for visit (required)…" value={reason} onChange={e => setReason(e.target.value)} />
-        <select className="input" aria-label="Visit mode" value={mode} onChange={e => setMode(e.target.value)}><option value="in_person">In person</option><option value="video">Video call</option><option value="phone">Phone call</option></select>
-        <button type="button" disabled={!!busy || !reason.trim()} onClick={book} className="btn-accent text-xs">{busy ? 'Verifying…' : 'Confirm ✓'}</button>
-      </div>
-    </div>}
-    <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">{slots.map(s => {
-      const key = `${s.calendar_id}-${s.starts_at}`
-      const active = selected?.starts_at === s.starts_at && selected?.calendar_id === s.calendar_id
-      return (
-      <Card key={key} className={`flex items-center justify-between ${active ? '!border-brand !ring-2 !ring-brand/30' : ''}`}><div><div className="font-bold text-sm">{new Date(s.starts_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric' })}</div><div className="text-sm text-ink-soft">{new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div></div>
-        <button type="button" onClick={() => { setSelected(s); setMsg('') }} className={active ? 'btn-primary text-xs' : 'btn-ghost text-xs'}>{active ? '✓ Selected' : 'Select'}</button></Card>)})}
-    </div>{!slots.length && <div className="text-sm text-ink-soft mt-4">No availability in the next 7 days (blocked / leave / booked respected).</div>}</div>
+  return <div><PageHead title={doc ? doc.name : 'Availability'} sub="Real slots from the scheduling engine — never invented. Pick a slot to continue to details." />
+    {loading ? <div className="card p-5"><div className="skeleton h-16 rounded-xl" /></div>
+    : !doc ? <div className="card p-5">Doctor not found.</div>
+    : <><Card className="mb-4 flex gap-4"><Avatar name={doc.name} size={64} photo={doc.photo_url} seed={doc.id} plain={false} /><div className="text-sm"><div className="font-bold text-base">{doc.name} · ★ {doc.avg_rating ?? doc.rating} ({doc.review_count ?? 0} reviews)</div><div className="text-ink-soft">{doc.specialty} · {doc.hospital_name}{doc.hospital_city ? ` (${doc.hospital_city})` : ''} · {doc.experience_years}y exp · {doc.qualifications}</div><div className="text-ink-soft">Languages: {doc.languages} · {doc.completed_visits ?? 0} completed visits</div></div></Card>
+    <SlotPicker doctorId={id} onPick={goConfirm} compact /></>}
+  </div>
 }
