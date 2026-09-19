@@ -84,6 +84,8 @@ class Patient(Base):
     dob: Mapped[str] = mapped_column(String(32), default="")
     gender: Mapped[str] = mapped_column(String(32), default="")
     address: Mapped[str] = mapped_column(Text, default="")
+    home_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    home_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     external_patient_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     home_hospital_id: Mapped[int | None] = mapped_column(ForeignKey("hospitals.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

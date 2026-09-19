@@ -215,3 +215,41 @@ def putctx(body: dict, db: Session = Depends(get_db), u=Depends(get_current_user
     if not row: row = models.UserContextPref(user_id=u.id, prefs="{}"); db.add(row); db.commit()
     cur = json.loads(row.prefs or "{}"); cur.update(body.get("prefs", body)); row.prefs = json.dumps(cur); db.commit()
     return {"prefs": cur}
+
+@router.get("/users/me/profile")
+def myprofile(db: Session = Depends(get_db), u=Depends(get_current_user)):
+    """Own editable profile. Email is the immutable login/audit key."""
+    out = {"id": u.id, "email": u.email, "role": u.role, "full_name": u.full_name, "hospital_id": u.hospital_id, "doctor_id": u.doctor_id, "patient_id": u.patient_id}
+    if u.role == "patient" and u.patient_id:
+        p = db.query(models.Patient).filter(models.Patient.id == u.patient_id).first()
+        if p: out["patient"] = {"phone": p.phone, "dob": p.dob, "gender": p.gender, "address": p.address, "home_latitude": p.home_latitude, "home_longitude": p.home_longitude}
+    return out
+
+@router.patch("/users/me")
+def patchme(body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    """Self-service profile edit (email locked). Syncs users + patients rows."""
+    from ...services.helpers import audit
+    if "full_name" in body:
+        name = (body["full_name"] or "").strip()
+        if not name: raise HTTPException(400, "full_name is required")
+        u.full_name = name[:255]
+    if u.role == "patient" and u.patient_id:
+        p = db.query(models.Patient).filter(models.Patient.id == u.patient_id).first()
+        if p:
+            if "full_name" in body: p.full_name = u.full_name
+            if "phone" in body: p.phone = (body["phone"] or "")[:64]
+            if "dob" in body: p.dob = (body["dob"] or "")[:32]
+            if "gender" in body: p.gender = (body["gender"] or "")[:32]
+            if "address" in body: p.address = (body["address"] or "")[:2000]
+            for k, lo, hi in (("home_latitude", -90, 90), ("home_longitude", -180, 180)):
+                if k in body:
+                    if body[k] is None or body[k] == "":
+                        setattr(p, k, None)
+                    else:
+                        try: v = float(body[k])
+                        except (TypeError, ValueError): raise HTTPException(400, f"{k} must be a number")
+                        if not (lo <= v <= hi): raise HTTPException(400, f"{k} out of range")
+                        setattr(p, k, v)
+    db.commit()
+    audit(db, "user.update.self", "user", u.id, u.hospital_id, u.id, {"fields": sorted(body.keys())}, "")
+    return {"ok": True}

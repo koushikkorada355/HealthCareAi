@@ -163,6 +163,8 @@ def _ensure_columns(db: Session):
         from sqlalchemy import text as _text
         db.execute(_text("ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION"))
         db.execute(_text("ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION"))
+        db.execute(_text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS home_latitude DOUBLE PRECISION"))
+        db.execute(_text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS home_longitude DOUBLE PRECISION"))
         db.commit()
     except Exception:
         db.rollback()

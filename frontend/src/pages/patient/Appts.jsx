@@ -133,7 +133,32 @@ export function Prefs() {
     <button className="btn-primary" onClick={async () => { await api('/users/me/context', { method: 'PUT', body: { prefs: p } }); setMsg('Saved.') }}>Save</button>{msg && <span className="ml-3 text-sm text-emerald-700">{msg}</span>}</Card></div>
 }
 export function Profile() {
-  const [me, setMe] = useState(null)
-  useEffect(() => { api('/auth/me').then(setMe).catch(() => {}) }, [])
-  return <div><PageHead title="Profile" /><Card className="max-w-lg">{me ? <div className="text-sm space-y-1"><div><b>Name:</b> {me.full_name}</div><div><b>Email:</b> {me.email}</div><div><b>Role:</b> {me.role}</div></div> : 'Loading…'}</Card></div>
+  const [me, setMe] = useState(null); const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
+  const [f, setF] = useState({ full_name: '', phone: '', dob: '', gender: '', address: '', home_latitude: '', home_longitude: '' })
+  const load = () => api('/users/me/profile').then(r => { setMe(r); const p = r.patient || {}; setF({ full_name: r.full_name || '', phone: p.phone || '', dob: p.dob || '', gender: p.gender || '', address: p.address || '', home_latitude: p.home_latitude ?? '', home_longitude: p.home_longitude ?? '' }) }).catch(() => setMsg('Could not load profile.'))
+  useEffect(load, [])
+  const save = async () => {
+    setBusy(true); setMsg('')
+    try {
+      await api('/users/me', { method: 'PATCH', body: { full_name: f.full_name, phone: f.phone, dob: f.dob, gender: f.gender, address: f.address, home_latitude: f.home_latitude === '' ? null : Number(f.home_latitude), home_longitude: f.home_longitude === '' ? null : Number(f.home_longitude) } })
+      setMsg('Profile saved.'); load()
+    } catch (e) { setMsg(`Could not save: ${e.message}`) } finally { setBusy(false) }
+  }
+  if (!me) return <div className="p-8">{msg || 'Loading…'}</div>
+  return <div><PageHead title="Profile" sub="Your information — email is your locked login ID." />
+    {msg && <div className="card p-3 mb-3 text-sm">{msg}</div>}
+    <div className="grid md:grid-cols-2 gap-4">
+      <Card className="max-w-lg"><div className="font-bold mb-2">Personal</div>
+        <div className="mb-3"><label className="text-xs font-semibold">Full name</label><input className="input mt-1" value={f.full_name} onChange={e => setF({ ...f, full_name: e.target.value })} /></div>
+        <div className="mb-3"><label className="text-xs font-semibold">Email (locked login ID 🔒)</label><input className="input mt-1" value={me.email} disabled /></div>
+        <div className="grid grid-cols-2 gap-2"><div className="mb-3"><label className="text-xs font-semibold">Phone</label><input className="input mt-1" value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} /></div><div className="mb-3"><label className="text-xs font-semibold">Role</label><input className="input mt-1" value={me.role} disabled /></div></div>
+        <div className="grid grid-cols-2 gap-2"><div className="mb-3"><label className="text-xs font-semibold">Date of birth</label><input className="input mt-1" value={f.dob} onChange={e => setF({ ...f, dob: e.target.value })} placeholder="YYYY-MM-DD" /></div><div className="mb-3"><label className="text-xs font-semibold">Gender</label><input className="input mt-1" value={f.gender} onChange={e => setF({ ...f, gender: e.target.value })} /></div></div>
+        <div className="mb-3"><label className="text-xs font-semibold">Home address</label><input className="input mt-1" value={f.address} onChange={e => setF({ ...f, address: e.target.value })} /></div>
+      </Card>
+      <Card className="max-w-lg"><div className="font-bold mb-2">Home location (manual pin)</div><p className="text-sm text-ink-soft mb-3">Type your coordinates — used later for “near me” sorting. Editable anytime, no map needed.</p>
+        <div className="grid grid-cols-2 gap-2"><div className="mb-3"><label className="text-xs font-semibold">LATITUDE (-90…90)</label><input className="input mt-1" inputMode="decimal" placeholder="e.g. 13.0827" value={f.home_latitude} onChange={e => setF({ ...f, home_latitude: e.target.value })} /></div><div className="mb-3"><label className="text-xs font-semibold">LONGITUDE (-180…180)</label><input className="input mt-1" inputMode="decimal" placeholder="e.g. 80.2707" value={f.home_longitude} onChange={e => setF({ ...f, home_longitude: e.target.value })} /></div></div>
+      </Card>
+    </div>
+    <div className="flex gap-2 mt-4"><button type="button" disabled={busy} onClick={save} className="btn-primary text-sm">{busy ? 'Saving…' : 'Save profile'}</button><button type="button" disabled={busy} onClick={async () => { setBusy(true); setMsg(''); try { await api('/users/me', { method: 'PATCH', body: { home_latitude: null, home_longitude: null } }); setMsg('Location cleared.'); load() } catch (e) { setMsg(`Could not clear: ${e.message}`) } finally { setBusy(false) } }} className="btn-ghost text-sm">Clear location</button></div>
+  </div>
 }
