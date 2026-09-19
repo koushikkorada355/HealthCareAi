@@ -52,7 +52,10 @@ async def invoke(db: Session, name: str, args: dict, *, user, conversation_id=No
 
 async def _search_hospitals(db, a, user=None, corr="", idem=""):
     q = db.query(models.Hospital).filter(models.Hospital.status=="approved")
-    if a.get("q"): q = q.filter(models.Hospital.name.ilike(f"%{a['q']}%"))
+    if a.get("city"): q = q.filter(models.Hospital.city.ilike(f"%{a['city']}%"))
+    if a.get("q"):
+        term = f"%{a['q']}%"
+        q = q.filter((models.Hospital.name.ilike(term)) | (models.Hospital.city.ilike(term)))
     return {"hospitals": [{"id":h.id,"name":h.name,"city":h.city,"services":h.services} for h in q.limit(20).all()]}
 async def _search_doctors(db, a, user=None, corr="", idem=""):
     q = db.query(models.Doctor).filter(models.Doctor.status=="active")

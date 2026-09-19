@@ -5,11 +5,21 @@ import { Card, PageHead, Avatar, Cover, Pill } from '../../components/ui.jsx'
 import { hospitalCover } from '../../utils/photos.js'
 
 export function Hospitals() {
-  const [rows, setRows] = useState([]); const [q, setQ] = useState('')
-  useEffect(() => { api('/hospitals').then(setRows).catch(() => {}) }, [])
+  const [rows, setRows] = useState([]); const [q, setQ] = useState(''); const [city, setCity] = useState('')
+  const load = (qq = q, cc = city) => {
+    const p = new URLSearchParams()
+    if (qq) p.set('q', qq)
+    if (cc) p.set('city', cc)
+    api(`/hospitals${p.toString() ? `?${p}` : ''}`).then(setRows).catch(() => {})
+  }
+  useEffect(() => { load('', '') }, [])
   const list = rows.filter(h => !q || h.name.toLowerCase().includes(q.toLowerCase()))
-  return <div><PageHead title="Hospitals" sub="Approved hospitals only." />
-    <input className="input mb-4 max-w-md" placeholder="Search hospitals…" value={q} onChange={e => setQ(e.target.value)} />
+  return <div><PageHead title="Hospitals" sub="Approved hospitals only. Filter by city for 'near me'." />
+    <div className="flex flex-wrap gap-2 mb-4">
+      <input className="input max-w-xs" placeholder="Search hospitals…" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} />
+      <input className="input max-w-xs" placeholder="City, e.g. Springfield…" value={city} onChange={e => setCity(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} />
+      <button type="button" className="btn-primary" onClick={() => load()}>Search</button>
+    </div>
     <div className="grid md:grid-cols-2 gap-4">{list.map(h => (
       <Card key={h.id} className="card-hover !p-0 overflow-hidden">
         <Cover src={h.cover_url || hospitalCover(h.slug)} height={140}>

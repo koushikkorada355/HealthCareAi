@@ -42,7 +42,7 @@ def n_interpret(s: GraphState) -> GraphState:
     elif any(w in t for w in ["book", "appointment", "see a doctor", "need to see", "shoulder pain", "sometime this week", "schedule"]): intent = "book"
     elif "questionnaire" in t or "pre-visit" in t or "pre visit" in t: intent = "questionnaire"
     elif any(w in t for w in ["find doctor", "find a doctor", "specialist", "doctor for"]): intent = "find_doctor"
-    elif "hospital" in t: intent = "find_hospital"
+    elif "hospital" in t or "near me" in t or "nearby" in t or "close by" in t or "close to me" in t: intent = "find_hospital"
     elif "availab" in t or "slot" in t or "openings" in t: intent = "availability"
     elif any(w in t for w in ["hi", "hello", "hey"]) and len(t) < 30: intent = "greeting"
     if any(w in t for w in ["diagnose me", "what do i have", "prescribe", "what should i take", "am i sick"]): intent = "unsafe"
@@ -67,7 +67,7 @@ def n_clarify_check(s: GraphState) -> GraphState:
         s["route"] = "clarify"
     else:
         s["needs_clarification"] = False
-        s["route"] = {"book":"discover","find_doctor":"discover","availability":"availability","reschedule":"action","cancel":"action","find_hospital":"discover","questionnaire":"questionnaire","greeting":"answer","unsafe":"answer"}.get(s.get("intent",""), "answer")
+        s["route"] = {"book":"discover","find_doctor":"discover","availability":"availability","reschedule":"action","cancel":"action","find_hospital":"discover_hospitals","questionnaire":"questionnaire","greeting":"answer","unsafe":"answer"}.get(s.get("intent",""), "answer")
     return s
 
 def build_graph():

@@ -29,11 +29,12 @@ def apply(b: HospIn, db: Session = Depends(get_db), u=Depends(get_current_user))
     return {"id": h.id, "slug": slug, "status": h.status, "cover_url": h.cover_url}
 
 @router.get("/hospitals")
-def list_h(db: Session = Depends(get_db), u=Depends(get_current_user), status: str = "", q: str = ""):
+def list_h(db: Session = Depends(get_db), u=Depends(get_current_user), status: str = "", q: str = "", city: str = ""):
     query = db.query(models.Hospital)
     if u.role == "hospital_admin" and u.hospital_id: query = query.filter(models.Hospital.id==u.hospital_id)
     elif u.role == "patient": query = query.filter(models.Hospital.status=="approved")
     if status: query = query.filter(models.Hospital.status==status)
+    if city: query = query.filter(models.Hospital.city.ilike(f"%{city}%"))
     if q: query = query.filter(models.Hospital.name.ilike(f"%{q}%"))
     return [{"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"city":h.city,"phone":h.phone,"contact_email":h.contact_email,"services":h.services,"ehr_vendor":h.ehr_vendor,"cover_url":h.cover_url,"review_notes":h.review_notes} for h in query.limit(100).all()]
 

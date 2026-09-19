@@ -65,6 +65,44 @@ async def chat(body: dict, db: Session = Depends(get_db), u=Depends(get_current_
                 reply_extra = {"doctors": docs, "slots": slots}
         except Exception as e:
             reply = f"Search hit an issue ({str(e)[:120]}). Want me to escalate to a human?"
+    elif g.get("route") == "discover_hospitals":
+        import re
+        tl = text.lower()
+        city = (prior.get("city") or "").strip()
+        try:
+            cities = [r[0] for r in db.query(models.Hospital.city).filter(models.Hospital.status == "approved").distinct().all() if r[0]]
+        except Exception:
+            cities = []
+        if not city:
+            for c in cities:
+                if c and c.lower() in tl:
+                    city = c
+                    break
+        if not city:
+            m = re.search(r"\bin\s+([a-zA-Z][a-zA-Z\s-]{1,40})", tl)
+            if m:
+                city = m.group(1).strip().title()
+        if not city:
+            chips = ", ".join(cities[:6]) or "your city"
+            reply = f"Which city should I search? e.g. {chips} — or say 'anywhere'."
+            reply_extra = {"cities": cities[:10], "needs_city": True}
+            trace.append("search_hospitals skipped: needs city")
+        else:
+            try:
+                r = await invoke(db, "search_hospitals", {"city": city} if city.lower() != "anywhere" else {}, user=u, conversation_id=conv.id, corr=corr)
+                hs = r["data"]["hospitals"][:8]
+                trace.append(f"search_hospitals city={city} -> {len(hs)}")
+                prior["city"] = city
+                if not hs:
+                    reply = f"I couldn't find an approved hospital in {city} right now. Want to try another city ({', '.join(cities[:6]) or 'nearby'})?"
+                else:
+                    lines = [f"**{h['name']}** — {h.get('city','')}" for h in hs]
+                    base = f"Here are approved hospitals in **{city}**:\n" + "\n".join("• " + l for l in lines) + "\n\nTell me a hospital to see its doctors, or say another city."
+                    reply, used = await formulate_reply(g, {"message": base})
+                    powered_by = "grok" if used else "rules"
+                    reply_extra = {"hospitals": hs, "city": city}
+            except Exception as e:
+                reply = f"Search hit an issue ({str(e)[:120]}). Want me to escalate to a human?"
     elif g.get("intent") in ("book",) and g.get("route") == "discover":
         reply, used = await formulate_reply(g)
         powered_by = "grok" if used else "rules"
@@ -74,6 +112,7 @@ async def chat(body: dict, db: Session = Depends(get_db), u=Depends(get_current_
     # persist conversational slice (no sensitive bulk)
     try:
         prior["intent"] = g.get("intent"); prior["specialty"] = g.get("specialty") or prior.get("specialty")
+        if prior.get("city"): prior["city"] = prior["city"]
         ctx.conversational = json.dumps(prior); db.commit()
     except Exception: pass
     db.add(models.AIMessage(conversation_id=conv.id, role="assistant", content=reply)); db.commit()
