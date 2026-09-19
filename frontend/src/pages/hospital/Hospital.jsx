@@ -78,6 +78,8 @@ export function Dash() {
     }).catch(() => {})
   }, [hid])
   const cards = [['Appointments', d?.appointments], ['Confirmed', d?.confirmed], ['Doctors', d?.doctors], ['AI-booked', d?.ai_booked], ['AI conversations', d?.ai_conversations], ['Cancelled', d?.cancelled], ['Open reconciliation', d?.reconciliation_open], ['EHR risk', d?.ehr_ops_failed]]
+  if (hid === undefined) return <div className="p-8 text-ink-soft">Loading…</div>
+  if (!hid) return <div><PageHead title="Hospital overview" sub="Get your hospital approved to unlock this dashboard." /><Card><Empty title="No hospital yet" sub="Register your hospital for System Admin review first." /><Link to="/hospitals/apply" className="btn-primary text-sm mt-3 inline-block">Register hospital →</Link></Card></div>
   return <div><PageHead title="Hospital overview" sub="Bookings, capacity, questionnaires, AI-driven demand, integration risk." />
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{cards.map(([l, v]) => <Card key={l}><div className="text-xs font-bold text-ink-soft">{l.toUpperCase()}</div><div className="text-3xl font-bold">{v ?? '–'}</div></Card>)}</div>
     {ready && <Card className="mt-4"><div className="font-bold mb-2">Ready for next phase {ready.every(([, ok]) => ok) ? '✓' : `(${ready.filter(([, ok]) => ok).length}/${ready.length})`}</div><div className="grid sm:grid-cols-2 md:grid-cols-4 gap-2">{ready.map(([l, ok, extra]) => <div key={l} className="flex items-center gap-2 text-sm"><span>{ok ? '✅' : '⬜'}</span><span><b>{l}</b> <span className="text-ink-soft">· {extra}</span></span></div>)}</div>{!ready.every(([, ok]) => ok) && <div className="text-xs text-ink-soft mt-2">Finish: Hospital profile → Doctors → Schedules → Questionnaires → Workflows → Integration.</div>}</Card>}
@@ -103,6 +105,8 @@ export function Doctors() {
     } catch (e) { setMsg(`Could not create: ${e.message}`) }
   }
   return <div><PageHead title="Doctors" sub="Lifecycle: invited → active → inactive/suspended. Only active doctors take future bookings." right={<span className="text-sm text-ink-soft">{rows.length} doctors</span>} />
+    {hid === undefined && <div className="text-ink-soft">Loading…</div>}
+    {hid === null && <Card><Empty title="No hospital yet" sub="Register your hospital for System Admin review first." /><Link to="/hospitals/apply" className="btn-primary text-sm mt-3 inline-block">Register hospital →</Link></Card>}
     {msg && <div className="card p-3 mb-3 text-sm">{msg}</div>}
     {creds && <Card className="mb-3 !border-emerald-300"><div className="font-bold">Doctor ID handoff — share by hand, shown once</div><div className="text-sm mt-1">Doctor ID: <code>#{creds.id}</code> · Login email: <code>{creds.login_email}</code> · Temp password: <code>{creds.temp_password}</code></div><div className="text-xs text-ink-soft mt-1">No email is sent. Give these to the doctor in person; they can change the password after first login.</div></Card>}
     <div className="grid md:grid-cols-3 gap-4">

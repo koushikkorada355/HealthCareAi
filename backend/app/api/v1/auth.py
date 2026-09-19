@@ -21,15 +21,18 @@ def _tok(u):
 
 @router.post("/auth/register")
 def register(b: Register, db: Session = Depends(get_db)):
-    if b.role not in ("patient","hospital_admin","doctor"): raise HTTPException(400, "Use hospital registration for hospitals; role must be patient/hospital_admin/doctor")
+    # Public signup: patients and hospital admins only. Doctors are created by
+    # their hospital admin (ID handoff); platform admins are seeded. Hospital
+    # binding happens only at /hospitals/apply, never from this payload.
+    if b.role not in ("patient","hospital_admin"): raise HTTPException(400, "Public registration is open for patient and hospital admin accounts")
     if db.query(models.User).filter(models.User.email==b.email).first(): raise HTTPException(400, "Email exists")
-    u = models.User(email=b.email, password_hash=hash_password(b.password), role=b.role, full_name=b.full_name, hospital_id=b.hospital_id)
+    u = models.User(email=b.email, password_hash=hash_password(b.password), role=b.role, full_name=b.full_name, hospital_id=None)
     db.add(u); db.commit(); db.refresh(u)
     if b.role == "patient":
         p = models.Patient(full_name=b.full_name, email=b.email, phone=b.phone); db.add(p); db.commit(); db.refresh(p)
         u.patient_id = p.id; db.commit()
         db.add(models.UserContextPref(user_id=u.id, prefs=json.dumps({"channel":"web"}))); db.commit()
-    audit(db, "auth.register", "user", u.id, b.hospital_id, u.id, {"role": b.role}, "")
+    audit(db, "auth.register", "user", u.id, None, u.id, {"role": b.role}, "")
     return _tok(u)
 
 @router.post("/auth/login")
