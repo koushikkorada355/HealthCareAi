@@ -15,8 +15,16 @@ def _scope(q, model, u):
 @router.get("/dashboard/platform")
 def dash_platform(db: Session = Depends(get_db), u=Depends(get_current_user)):
     if u.role != "platform_admin": raise HTTPException(403)
+    by_status = dict(db.query(models.Hospital.status, func.count(models.Hospital.id)).group_by(models.Hospital.status).all())
     return {
         "hospitals": db.query(func.count(models.Hospital.id)).scalar(),
+        "hospitals_draft": by_status.get("draft", 0),
+        "hospitals_submitted": by_status.get("submitted", 0),
+        "hospitals_under_review": by_status.get("under_review", 0),
+        "hospitals_approved": by_status.get("approved", 0),
+        "hospitals_rejected": by_status.get("rejected", 0),
+        "hospitals_corrections": by_status.get("corrections_requested", 0),
+        "hospitals_suspended": by_status.get("suspended", 0),
         "applications_pending": db.query(func.count(models.Hospital.id)).filter(models.Hospital.status.in_(["submitted","under_review"])).scalar(),
         "doctors": db.query(func.count(models.Doctor.id)).scalar(),
         "patients": db.query(func.count(models.Patient.id)).scalar(),

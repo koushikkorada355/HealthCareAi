@@ -16,8 +16,8 @@ export function Login() {
         <label className="text-xs font-semibold">Password</label><input className="input mt-1 mb-3" type="password" value={password} onChange={e => setPassword(e.target.value)} />
         {err && <div className="text-sm text-crit bg-red-50 rounded-xl p-2.5 mb-3">{err}</div>}
         <button className="btn-primary w-full" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-        <div className="mt-4 text-xs font-bold text-ink-soft">ONE-CLICK DEMO ACCOUNTS (password: password123)</div>
-        <div className="grid grid-cols-2 gap-2 mt-2">{DEMOS.map(d => <button type="button" key={d.email} onClick={() => setEmail(d.email)} className="btn-ghost text-xs">{d.label}</button>)}</div>
+        <div className="mt-4 text-xs font-bold text-ink-soft">ONE-CLICK DEMO ACCOUNTS (System Admin: 12345, others: password123)</div>
+        <div className="grid grid-cols-2 gap-2 mt-2">{DEMOS.map(d => <button type="button" key={d.email} onClick={() => { setEmail(d.email); setPassword(d.password || 'password123') }} className="btn-ghost text-xs">{d.label}</button>)}</div>
         <div className="mt-4 text-sm flex justify-between"><Link to="/register" className="text-teal font-semibold">Create account</Link><Link to="/forgot-password" className="text-ink-soft">Forgot password?</Link></div>
       </form>
     </div>
@@ -53,12 +53,13 @@ export function Forgot() {
   </div></div>
 }
 export function HospitalApply() {
-  const [step, setStep] = useState(0); const [f, setF] = useState({ name: '', city: '', address: '', phone: '', contact_email: '' }); const [done, setDone] = useState(null)
-  const submit = async () => {
+  const [step, setStep] = useState(0); const [f, setF] = useState({ name: '', city: '', address: '', phone: '', contact_email: '' }); const [done, setDone] = useState(null); const [busy, setBusy] = useState(false)
+  const submit = async (asDraft) => {
     const { api, token } = await import('../../api/client.js')
-    if (!token()) { setDone({ error: 'Please login first (any account), then apply.' }); return }
-    try { const r = await api('/hospitals/apply', { method: 'POST', body: { ...f, services: ['outpatient'], operating_hours: {} } }); setDone(r) }
-    catch (e) { setDone({ error: e.message }) }
+    if (!token()) { setDone({ error: 'Please login first as a hospital admin, then apply.' }); return }
+    setBusy(true)
+    try { const r = await api('/hospitals/apply', { method: 'POST', body: { ...f, services: ['outpatient'], operating_hours: {}, as_draft: !!asDraft } }); setDone(r) }
+    catch (e) { setDone({ error: e.message }) } finally { setBusy(false) }
   }
   return <div className="min-h-screen flex items-center justify-center p-5"><div className="card p-7 w-full max-w-lg fade-in">
     <div className="font-display text-2xl">Register hospital</div>
@@ -66,8 +67,8 @@ export function HospitalApply() {
     {[['name', 'Hospital name'], ['city', 'City'], ['address', 'Address'], ['phone', 'Phone'], ['contact_email', 'Admin email']].map(([k, l]) => (
       <div key={k} className="mb-3"><label className="text-xs font-semibold">{l}</label><input className="input mt-1" value={f[k]} onChange={e => setF({ ...f, [k]: e.target.value })} /></div>
     ))}
-    {!done ? <button onClick={submit} className="btn-primary w-full">Submit application</button>
+    {!done ? <div className="flex gap-2"><button onClick={() => submit(true)} disabled={busy} className="btn-ghost flex-1">{busy ? 'Saving…' : 'Save draft'}</button><button onClick={() => submit(false)} disabled={busy} className="btn-primary flex-1">{busy ? 'Submitting…' : 'Submit application'}</button></div>
     : done.error ? <div className="text-sm text-crit bg-red-50 p-3 rounded-xl">{done.error}</div>
-    : <div className="text-sm bg-emerald-50 text-emerald-700 p-3 rounded-xl">Submitted! Status: <b>{done.status}</b>. Track it under Platform admin → Applications.</div>}
+    : <div className="text-sm bg-emerald-50 text-emerald-700 p-3 rounded-xl">{done.status === 'draft' ? 'Saved as draft.' : 'Submitted!'} Status: <b>{done.status}</b>. Track it under Platform admin → Applications.</div>}
   </div></div>
 }

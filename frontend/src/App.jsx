@@ -11,7 +11,7 @@ import { BookFind, BookSlots } from './pages/patient/Book.jsx'
 import { Upcoming, History, Detail, Questionnaires, QFill, Prefs, Profile } from './pages/patient/Appts.jsx'
 import { Dash as DocDash, ApptList, Calendar, Availability, ApptDetail } from './pages/doctor/Doctor.jsx'
 import { Dash as HDash, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, AIActivity as HAI, Integrations as HInt, Workflows as HWf, Notifications, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
-import { Dash as ADash, Applications, TablePage, Integrations as AInt, Reconciliation, AIActivity as AAI, Analytics as AAn, OpsHealth } from './pages/admin/Admin.jsx'
+import { Dash as ADash, Applications, ApplicationDetail, TablePage, Integrations as AInt, Reconciliation, AIActivity as AAI, Analytics as AAn, OpsHealth } from './pages/admin/Admin.jsx'
 
 const isToday = (a) => new Date(a.starts_at).toDateString() === new Date().toDateString()
 const isUpcoming = (a) => new Date(a.starts_at) >= new Date() && ['confirmed', 'pending', 'rescheduled'].includes(a.status)
@@ -69,6 +69,7 @@ export default function App() {
       {/* platform admin */}
       <Route path="/admin" element={<Require roles={['platform_admin']}><ADash /></Require>} />
       <Route path="/admin/applications" element={<Require roles={['platform_admin']}><Applications /></Require>} />
+      <Route path="/admin/applications/:id" element={<Require roles={['platform_admin']}><ApplicationDetail /></Require>} />
       <Route path="/admin/hospitals" element={<Require roles={['platform_admin']}><TablePage title="Hospitals" path="/hospitals" cols={['id', 'name', 'status', 'city', 'ehr_vendor']} /></Require>} />
       <Route path="/admin/doctors" element={<Require roles={['platform_admin']}><TablePage title="Doctors" path="/doctors" cols={['id', 'name', 'specialty', 'hospital_name', 'status']} /></Require>} />
       <Route path="/admin/patients" element={<Require roles={['platform_admin']}><TablePage title="Patients" path="/patients" cols={['id', 'full_name', 'email', 'external_patient_id']} /></Require>} />

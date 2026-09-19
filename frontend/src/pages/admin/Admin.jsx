@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { api } from '../../api/client.js'
 import { Card, PageHead, Pill, Empty } from '../../components/ui.jsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
@@ -9,11 +9,12 @@ export function Dash() {
   useEffect(() => { api('/dashboard/platform').then(setD).catch(() => {}) }, [])
   const capTotal = Number(d?.cap_success || 0) + Number(d?.cap_failed || 0)
   const capRate = capTotal ? `${Math.round((Number(d.cap_success) / capTotal) * 100)}%` : '–'
-  const kpis = [['Hospitals', d?.hospitals], ['Pending applications', d?.applications_pending], ['Doctors', d?.doctors], ['Patients', d?.patients], ['Appointments', d?.appointments], ['AI conversations', d?.ai_conversations], ['Capability success', capRate], ['Cap failed', d?.cap_failed]]
-  return <div><PageHead title="Platform operations" sub="Health, AI, integrations, reconciliation — one wall." />
+  const kpis = [['Total hospitals', d?.hospitals], ['Pending applications', d?.applications_pending], ['Under review', d?.hospitals_under_review], ['Approved', d?.hospitals_approved], ['Rejected', d?.hospitals_rejected], ['Correction required', d?.hospitals_corrections], ['Suspended', d?.hospitals_suspended], ['Draft', d?.hospitals_draft], ['Doctors', d?.doctors], ['Patients', d?.patients], ['Appointments', d?.appointments], ['AI conversations', d?.ai_conversations], ['Capability success', capRate], ['Cap failed', d?.cap_failed]]
+  return <div><PageHead title="Platform operations" sub="Hospitals by lifecycle status, review queue, health, AI, integrations — one wall." />
     <div className="grid md:grid-cols-4 gap-4">{kpis.map(([l, v]) => <Card key={l}><div className="text-xs font-bold text-ink-soft">{l.toUpperCase()}</div><div className="text-3xl font-bold">{v ?? '–'}</div></Card>)}</div>
-    <div className="grid md:grid-cols-2 gap-4 mt-4">
-      <Card className={Number(d?.reconciliation_open) > 0 ? '!border-red-300' : ''}><div className="font-bold">Recovery queue</div><div className="text-sm mt-1">Open reconciliations: <b>{d?.reconciliation_open ?? 0}</b> · Unknown outcomes: <b>{d?.unknown_outcome ?? 0}</b></div><Link to="/admin/reconciliation" className="btn-primary text-sm mt-3 inline-block">Open failure/recovery view</Link></Card>
+    <div className="grid md:grid-cols-3 gap-4 mt-4">
+      <Card><div className="font-bold">Review queue</div><div className="text-sm mt-1">Submitted: <b>{d?.hospitals_submitted ?? 0}</b> · Under review: <b>{d?.hospitals_under_review ?? 0}</b> · Corrections: <b>{d?.hospitals_corrections ?? 0}</b></div><Link to="/admin/applications" className="btn-primary text-sm mt-3 inline-block">Open review queue</Link></Card>
+      <Card className={Number(d?.reconciliation_open) > 0 ? '!border-red-300' : ''}><div className="font-bold">Recovery queue</div><div className="text-sm mt-1">Open reconciliations: <b>{d?.reconciliation_open ?? 0}</b> · Unknown outcomes: <b>{d?.unknown_outcome ?? 0}</b></div><Link to="/admin/reconciliation" className="btn-ghost text-sm mt-3 inline-block">Open failure/recovery view</Link></Card>
       <Card><div className="font-bold">Failure demo (1 click)</div><div className="text-sm text-ink-soft mt-1">Book with <code>simulate=timeout_after_create</code> via API or MCP, then watch probe → sync without duplicate here and in Integrations.</div><Link to="/admin/integrations" className="btn-ghost text-sm mt-3 inline-block">View integration chain</Link></Card>
     </div></div>
 }
@@ -27,12 +28,36 @@ export function Applications() {
     catch (e) { alert(`Could not ${action}: ${e.message}`) } finally { setActing(null) }
   }
   const ACTIONS = ['under_review', 'approve', 'reject', 'corrections', 'suspend', 'reactivate']
-  return <div><PageHead title="Hospital applications" right={<select className="input !w-auto" aria-label="Filter by status" value={f} onChange={e => setF(e.target.value)}>{['submitted', 'under_review', 'approved', 'rejected', 'all'].map(s => <option key={s}>{s}</option>)}</select>} />
+  const STATUSES = ['submitted', 'under_review', 'corrections_requested', 'approved', 'rejected', 'suspended', 'draft', 'all']
+  return <div><PageHead title="Hospital applications" sub="Pending Review: new → under review → correction required. Open any card for the full file." right={<select className="input !w-auto" aria-label="Filter by status" value={f} onChange={e => setF(e.target.value)}>{STATUSES.map(s => <option key={s}>{s}</option>)}</select>} />
     <Card className="mb-3"><label htmlFor="app-note" className="text-xs font-bold">REVIEW NOTE (attached to approve / reject / corrections…)</label>
       <input id="app-note" className="input mt-1" placeholder="e.g. Verified license, looks good" value={note} onChange={e => setNote(e.target.value)} /></Card>
-    {rows.map(h => <Card key={h.id} className="mb-3 flex flex-wrap items-center gap-3"><div className="flex-1 min-w-[200px]"><div className="font-bold">{h.name}</div><div className="text-sm text-ink-soft">{h.city} · {h.contact_email}</div></div><Pill value={h.status} />
+    {rows.map(h => <Card key={h.id} className="mb-3 flex flex-wrap items-center gap-3"><div className="flex-1 min-w-[200px]"><div className="font-bold">{h.name}</div><div className="text-sm text-ink-soft">{h.city} · {h.contact_email} · {h.doctor_count ?? 0} doctors · submitted {h.created_at?.slice(0, 10) || '—'}</div>{h.review_notes && <div className="text-xs text-amber-700 mt-1">Note: {h.review_notes}</div>}</div><Pill value={h.status} />
+      <Link to={`/admin/applications/${h.id}`} className="btn-primary text-xs">Open / review</Link>
       <div className="flex flex-wrap gap-1.5">{ACTIONS.map(a => <button key={a} type="button" disabled={!!acting} onClick={() => act(h.id, a)} className="btn-ghost text-xs">{acting === `${h.id}-${a}` ? '…' : a.replace('_', ' ')}</button>)}</div></Card>)}
     {!rows.length && <Card><Empty title="Empty queue" sub="New applications appear here." /></Card>}</div>
+}
+export function ApplicationDetail() {
+  const { id } = useParams()
+  const [h, setH] = useState(null); const [hist, setHist] = useState([]); const [note, setNote] = useState(''); const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
+  const load = () => { api(`/hospitals/${id}`).then(setH).catch(() => setMsg('Could not load application.')); api(`/hospitals/${id}/history`).then(setHist).catch(() => {}) }
+  useEffect(load, [id])
+  const act = async (action) => {
+    setBusy(true); setMsg('')
+    try { const r = await api(`/hospitals/${id}/review`, { method: 'POST', body: { action, note } }); setNote(''); load(); setMsg(`Status → ${r.status}`) }
+    catch (e) { setMsg(`Could not ${action}: ${e.message}`) } finally { setBusy(false) }
+  }
+  if (!h) return <div className="p-8">{msg || 'Loading…'}</div>
+  const ACTIONS = ['under_review', 'approve', 'reject', 'corrections', 'suspend', 'reactivate']
+  return <div><PageHead title={h.name} sub={`Application ${h.slug} · submitted ${h.created_at?.slice(0, 10) || '—'}`} right={<Pill value={h.status} />} />
+    {msg && <div className="card p-3 mb-3 text-sm">{msg}</div>}
+    <div className="grid md:grid-cols-2 gap-4">
+      <Card><div className="font-bold mb-2">Organization</div><div className="text-sm space-y-1"><div><b>Address:</b> {h.address} · {h.city}</div><div><b>Contact:</b> {h.contact_email} · {h.phone}</div><div><b>Services:</b> {h.services}</div><div><b>Hours:</b> <code className="text-xs">{h.operating_hours}</code></div><div><b>Doctors:</b> {h.doctor_count} active · <b>Completed visits:</b> {h.completed_visits}</div></div></Card>
+      <Card><div className="font-bold mb-2">Systems & admins</div><div className="text-sm space-y-1"><div><b>EHR vendor:</b> {h.ehr_vendor} · <b>Facility:</b> <code className="text-xs">{h.external_facility_id}</code></div><div><b>Connections:</b> {(h.connections || []).map(c => `${c.vendor}@${c.base_url} (${c.status})`).join(', ') || '—'}</div><div><b>Admins:</b> {(h.admins || []).map(a => `${a.full_name} <${a.email}>`).join(', ') || '—'}</div><div><b>Departments:</b> {(h.departments || []).map(d => d.name).join(', ') || '—'}</div><div><b>Specialties:</b> {(h.specialties || []).map(s => s.name).join(', ') || '—'}</div></div></Card>
+    </div>
+    <Card className="mt-4"><div className="font-bold mb-2">Review note</div><input className="input" placeholder="e.g. Verified license, request fire NOC…" value={note} onChange={e => setNote(e.target.value)} /><div className="flex flex-wrap gap-1.5 mt-2">{ACTIONS.map(a => <button key={a} type="button" disabled={busy} onClick={() => act(a)} className="btn-ghost text-xs">{a.replace('_', ' ')}</button>)}</div>{h.review_notes && <div className="text-xs text-amber-700 mt-2">Last note: {h.review_notes}</div>}</Card>
+    <Card className="mt-4"><div className="font-bold mb-2">Status timeline</div>{hist.length ? hist.map(e => <div key={e.id} className="text-xs font-mono py-1.5 border-t border-slate-100">{e.at?.slice(0, 19)} · {e.action} · user #{e.actor_user_id ?? '—'} · {e.correlation_id}</div>) : <div className="text-sm text-ink-soft">No recorded actions yet.</div>}</Card>
+  </div>
 }
 export function TablePage({ title, path, cols }) {
   const [rows, setRows] = useState([])

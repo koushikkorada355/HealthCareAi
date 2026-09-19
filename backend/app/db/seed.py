@@ -93,9 +93,24 @@ def run(db: Session):
         _full_seed(db)
     else:
         print("seed: already populated")
+    _ensure_system_admin(db)
     topup(db)
     print("seed: done")
     return {"seeded": True}
+
+def _ensure_system_admin(db: Session):
+    """Hardcoded System Admin login: admin@gmail.com / 12345 (demo only).
+
+    Idempotent: creates or repairs the account on every boot so the
+    platform always has a working System Admin entry point.
+    """
+    u = db.query(models.User).filter(models.User.email=="admin@gmail.com").first()
+    if not u:
+        u = models.User(email="admin@gmail.com", password_hash=hash_password("12345"), role="platform_admin", full_name="System Admin")
+        db.add(u); db.commit(); db.refresh(u)
+    else:
+        u.password_hash = hash_password("12345"); u.role = "platform_admin"
+        u.full_name = u.full_name or "System Admin"; u.is_active = True; db.commit()
 
 def _full_seed(db: Session):
     now = datetime.now(timezone.utc)
