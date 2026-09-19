@@ -38,8 +38,13 @@ def _parse_hhmm(v: str):
         raise ValueError(f"bad time {v!r}")
     return h, m
 
-def compute_slots(db: Session, doctor_id: int, day: datetime, duration: int | None = None):
-    """Return list of {starts_at, ends_at, calendar_id} for a UTC day (date part used)."""
+def compute_slots(db: Session, doctor_id: int, day: datetime, duration: int | None = None, now: datetime | None = None):
+    """Return list of {starts_at, ends_at, calendar_id} for a UTC day (date part used).
+
+    Slots fully in the past (ends_at <= now) are never listed. `now` is
+    injectable for deterministic tests; defaults to current UTC time.
+    """
+    now = now or datetime.now(timezone.utc)
     doc = db.query(models.Doctor).filter(models.Doctor.id==doctor_id).first()
     if not doc or doc.status != "active": return []
     cals = db.query(models.Calendar).filter(models.Calendar.doctor_id==doctor_id, models.Calendar.is_active==True).all()
@@ -69,12 +74,14 @@ def compute_slots(db: Session, doctor_id: int, day: datetime, duration: int | No
                 continue
             while cur + timedelta(minutes=sm) <= end:
                 slot_end = cur + timedelta(minutes=sm)
-                if is_slot_free(db, doctor_id, cal.id, cur, slot_end):
+                if slot_end > now and is_slot_free(db, doctor_id, cal.id, cur, slot_end, now=now):
                     out.append({"starts_at": cur.isoformat(), "ends_at": slot_end.isoformat(), "calendar_id": cal.id, "doctor_id": doctor_id})
                 cur = slot_end
     return out
 
-def is_slot_free(db: Session, doctor_id: int, calendar_id: int, starts_at: datetime, ends_at: datetime, ignore_appointment_id: int | None = None) -> bool:
+def is_slot_free(db: Session, doctor_id: int, calendar_id: int, starts_at: datetime, ends_at: datetime, ignore_appointment_id: int | None = None, now: datetime | None = None) -> bool:
+    now = now or datetime.now(timezone.utc)
+    if ends_at <= now: return False  # past slots are never bookable
     doc = db.query(models.Doctor).filter(models.Doctor.id==doctor_id).first()
     if not doc or doc.status != "active": return False
     cal = db.query(models.Calendar).filter(models.Calendar.id==calendar_id).first()
@@ -118,7 +125,10 @@ def is_slot_free(db: Session, doctor_id: int, calendar_id: int, starts_at: datet
         if not wh.get(key): wh_ok = True  # no constraint defined -> allow if other checks pass
     return wh_ok
 
-def validate_slot(db: Session, doctor_id: int, calendar_id: int, starts_at: datetime, ends_at: datetime, ignore_appointment_id=None):
-    if not is_slot_free(db, doctor_id, calendar_id, starts_at, ends_at, ignore_appointment_id):
+def validate_slot(db: Session, doctor_id: int, calendar_id: int, starts_at: datetime, ends_at: datetime, ignore_appointment_id=None, now: datetime | None = None):
+    now = now or datetime.now(timezone.utc)
+    if ends_at <= now:
+        raise ValueError("Slot is in the past")
+    if not is_slot_free(db, doctor_id, calendar_id, starts_at, ends_at, ignore_appointment_id, now=now):
         raise ValueError("Slot is not available (blocked/leave/booked/hours/inactive)")
     return True

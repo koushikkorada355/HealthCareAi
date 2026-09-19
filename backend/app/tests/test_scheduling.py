@@ -27,11 +27,29 @@ def test_slots_only_from_engine_and_blocked_respected():
     day = datetime.now(timezone.utc)
     # find next weekday
     while day.weekday() > 4: day += timedelta(days=1)
-    slots = compute_slots(db, d.id, day)
+    frozen = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    slots = compute_slots(db, d.id, day, now=frozen)
     assert len(slots) == 6  # 09-12 half hours
     s0 = datetime.fromisoformat(slots[0]["starts_at"]); e0 = datetime.fromisoformat(slots[0]["ends_at"])
     db.add(models.BlockedSlot(calendar_id=c.id, starts_at=s0, ends_at=e0, reason="x")); db.commit()
-    assert not is_slot_free(db, d.id, c.id, s0, e0)
+    assert not is_slot_free(db, d.id, c.id, s0, e0, now=frozen)
+
+def test_past_slots_never_listed_or_bookable():
+    from app.scheduling.engine import validate_slot
+    db = _db(); h, d, c = _mk(db)
+    day = datetime.now(timezone.utc)
+    while day.weekday() > 4: day += timedelta(days=1)
+    frozen = day.replace(hour=15, minute=0, second=0, microsecond=0)
+    slots = compute_slots(db, d.id, day, now=frozen)
+    assert all(datetime.fromisoformat(s["ends_at"]) > frozen for s in slots)
+    assert len(slots) < 6  # morning slots already passed
+    past_end = day.replace(hour=9, minute=30, second=0, microsecond=0)
+    past_start = day.replace(hour=9, minute=0, second=0, microsecond=0)
+    try:
+        validate_slot(db, d.id, c.id, past_start, past_end, now=frozen)
+        assert False, "past slot must not validate"
+    except ValueError as e:
+        assert "past" in str(e).lower()
 
 def test_leave_and_booking_conflict():
     db = _db(); h, d, c = _mk(db)
@@ -39,7 +57,7 @@ def test_leave_and_booking_conflict():
     while day.weekday() > 4: day += timedelta(days=1)
     e = day + timedelta(minutes=30)
     db.add(models.Leave(doctor_id=d.id, starts_at=day, ends_at=e)); db.commit()
-    assert not is_slot_free(db, d.id, c.id, day, e)
+    assert not is_slot_free(db, d.id, c.id, day, e, now=day.replace(hour=0, minute=0))
 
 def test_state_machine():
     assert can_transition("requested", "pending")
