@@ -12,7 +12,7 @@ router = APIRouter(tags=["doctors"])
 class DocIn(BaseModel):
     hospital_id: int; name: str; specialty_id: int | None = None; department_id: int | None = None
     qualifications: str = "MD"; experience_years: int = 5; languages: list = ["English"]
-    consultation_types: list = ["in_person"]; duration_minutes: int = 30; photo_url: str = ""
+    consultation_types: list = ["in_person"]; duration_minutes: int = 30
     external_provider_id: str = ""; email: str = ""
 
 @router.get("/doctors")
@@ -37,7 +37,10 @@ def create_d(b: DocIn, db: Session = Depends(get_db), u=Depends(get_current_user
     if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
     h = db.query(models.Hospital).filter(models.Hospital.id==b.hospital_id).first()
     if not h or h.status!="approved": raise HTTPException(400, "Hospital must be approved")
-    d = models.Doctor(hospital_id=b.hospital_id, name=b.name, specialty_id=b.specialty_id, department_id=b.department_id, qualifications=b.qualifications, experience_years=b.experience_years, languages=json.dumps(b.languages), consultation_types=json.dumps(b.consultation_types), duration_minutes=b.duration_minutes, photo_url=b.photo_url, status="active", external_provider_id=b.external_provider_id or f"ext-prov-{b.hospital_id}-{b.name[:4]}")
+    # Auto-assign Unsplash photo on create — never ask admin/doctor for an image.
+    from ...utils.photos import doctor_photo_for
+    photo_url = doctor_photo_for(f"{b.hospital_id}-{b.name}")
+    d = models.Doctor(hospital_id=b.hospital_id, name=b.name, specialty_id=b.specialty_id, department_id=b.department_id, qualifications=b.qualifications, experience_years=b.experience_years, languages=json.dumps(b.languages), consultation_types=json.dumps(b.consultation_types), duration_minutes=b.duration_minutes, photo_url=photo_url, status="active", external_provider_id=b.external_provider_id or f"ext-prov-{b.hospital_id}-{b.name[:4]}")
     db.add(d); db.commit(); db.refresh(d)
     cal = models.Calendar(hospital_id=b.hospital_id, doctor_id=d.id, name="Main", is_active=True, working_hours=json.dumps({"mon":[["09:00","17:00"]],"tue":[["09:00","17:00"]],"wed":[["09:00","17:00"]],"thu":[["09:00","17:00"]],"fri":[["09:00","15:00"]]}))
     db.add(cal); db.commit(); db.refresh(cal)
@@ -50,7 +53,7 @@ def create_d(b: DocIn, db: Session = Depends(get_db), u=Depends(get_current_user
     audit(db, "doctor.create", "doctor", d.id, b.hospital_id, u.id, {"name": b.name}, "")
     from ...services.workflows import fire_event
     fire_event(db, "doctor.created", b.hospital_id, {"doctor_id": d.id}, "")
-    return {"id": d.id, "calendar_id": cal.id}
+    return {"id": d.id, "calendar_id": cal.id, "photo_url": d.photo_url}
 
 @router.get("/doctors/{did}")
 def get_d(did: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -68,7 +71,7 @@ def patch_d(did: int, body: dict, db: Session = Depends(get_db), u=Depends(get_c
     if u.role=="hospital_admin" and u.hospital_id!=d.hospital_id: raise HTTPException(403)
     if u.role=="doctor" and u.doctor_id!=did: raise HTTPException(403)
     if u.role not in ("platform_admin","hospital_admin","doctor"): raise HTTPException(403)
-    for k in ("name","qualifications","experience_years","duration_minutes","status","photo_url","external_provider_id"):
+    for k in ("name","qualifications","experience_years","duration_minutes","status","external_provider_id"):
         if k in body: setattr(d, k, body[k])
     for k in ("languages","consultation_types"):
         if k in body: setattr(d, k, json.dumps(body[k]))

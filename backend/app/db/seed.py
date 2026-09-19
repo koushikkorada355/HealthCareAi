@@ -19,20 +19,27 @@ def _u(db, email, role, name, **kw):
 def _img(pid):
     return f"https://images.unsplash.com/{pid}?auto=format&fit=crop&w=256&q=60"
 
-DOCTOR_PHOTOS = [
-    _img("photo-1559839734-2b71ea197ec2"),
-    _img("photo-1612349317150-e413f6a5b16d"),
-    _img("photo-1594824476967-48c8b964273f"),
-    _img("photo-1622253692010-333f2da6031d"),
-    _img("photo-1651008376811-b90baee60c1f"),
-    _img("photo-1582750433449-648ed127bb54"),
-    _img("photo-1638202993928-7267aad84c31"),
-    _img("photo-1537368910025-700350fe46c7"),
-    _img("photo-1551601651-2a8555f1a136"),
-    _img("photo-1579684385127-1ef15d508118"),
-    _img("photo-1612349316228-5942a9b489c2"),
-    _img("photo-1580489944761-15a19d654956"),
-]
+# Central Unsplash lists (single source: app/utils/photos.py). Kept here for compat.
+try:
+    from ..utils.photos import DOCTOR_PHOTOS, HOSPITAL_COVERS, hospital_cover_for
+except Exception:
+    DOCTOR_PHOTOS = [
+        _img("photo-1559839734-2b71ea197ec2"),
+        _img("photo-1612349317150-e413f6a5b16d"),
+        _img("photo-1594824476967-48c8b964273f"),
+        _img("photo-1622253692010-333f2da6031d"),
+        _img("photo-1651008376811-b90baee60c1f"),
+        _img("photo-1582750433449-648ed127bb54"),
+        _img("photo-1638202993928-7267aad84c31"),
+        _img("photo-1537368910025-700350fe46c7"),
+        _img("photo-1551601651-2a8555f1a136"),
+        _img("photo-1579684385127-1ef15d508118"),
+        _img("photo-1612349316228-5942a9b489c2"),
+        _img("photo-1580489944761-15a19d654956"),
+    ]
+    HOSPITAL_COVERS = []
+    def hospital_cover_for(slug: str) -> str:
+        return ""
 
 def topup(db: Session):
     """Patch existing databases: photos, future visits, evals, demo Q response."""
@@ -40,6 +47,13 @@ def topup(db: Session):
     for i, d in enumerate(docs):
         if not d.photo_url:
             d.photo_url = DOCTOR_PHOTOS[i % len(DOCTOR_PHOTOS)]
+    # Backfill hospital covers (auto-Unsplash, no prompt). Skip if column missing on old DBs.
+    try:
+        for h in db.query(models.Hospital).all():
+            if not getattr(h, "cover_url", None):
+                h.cover_url = hospital_cover_for(h.slug)
+    except Exception:
+        pass
     db.commit()
     now = datetime.now(timezone.utc)
     pats = db.query(models.Patient).order_by(models.Patient.id).all()
@@ -98,8 +112,13 @@ def _full_seed(db: Session):
     for name, slug, status, addr, city in hospitals:
         h = db.query(models.Hospital).filter(models.Hospital.slug==slug).first()
         if not h:
-            h = models.Hospital(name=name, slug=slug, status=status, address=addr, city=city, phone="+1-555-0100", contact_email=f"admin@{slug}.org", operating_hours=json.dumps({"mon":[["09:00","17:00"]]}), services=json.dumps(["outpatient","imaging","lab"]), ehr_vendor="mock", external_facility_id=f"ext-fac-{slug}")
+            h = models.Hospital(name=name, slug=slug, status=status, address=addr, city=city, phone="+1-555-0100", contact_email=f"admin@{slug}.org", operating_hours=json.dumps({"mon":[["09:00","17:00"]]}), services=json.dumps(["outpatient","imaging","lab"]), ehr_vendor="mock", cover_url=hospital_cover_for(slug), external_facility_id=f"ext-fac-{slug}")
             db.add(h); db.commit(); db.refresh(h)
+        elif not getattr(h, "cover_url", None):
+            try:
+                h.cover_url = hospital_cover_for(slug); db.commit()
+            except Exception:
+                pass
         h_objs.append(h)
     _u(db, "admin@platform.org", "platform_admin", "Platform Admin")
     doc_names = [("Dr. Maya Rao","Orthopedics",10),("Dr. James Lee","Cardiology",12),("Dr. Sara Khan","Dermatology",8),("Dr. Tom Becker","General Medicine",15),("Dr. Anita Desai","Pediatrics",9),("Dr. Chris Novak","Neurology",11)]

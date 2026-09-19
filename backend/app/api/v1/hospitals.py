@@ -18,12 +18,15 @@ class HospIn(BaseModel):
 def apply(b: HospIn, db: Session = Depends(get_db), u=Depends(get_current_user)):
     slug = "".join(c.lower() if c.isalnum() else "-" for c in b.name)[:60].strip("-")
     if db.query(models.Hospital).filter(models.Hospital.slug==slug).first(): slug += "-2"
-    h = models.Hospital(name=b.name, slug=slug, status="submitted", address=b.address, city=b.city, phone=b.phone, contact_email=b.contact_email, operating_hours=json.dumps(b.operating_hours), services=json.dumps(b.services), ehr_vendor=b.ehr_vendor, ehr_config=json.dumps(b.ehr_config), external_facility_id=f"ext-fac-{slug}")
+    # Auto-assign Unsplash cover on create — never ask admin for an image.
+    from ...utils.photos import hospital_cover_for
+    cover_url = hospital_cover_for(slug)
+    h = models.Hospital(name=b.name, slug=slug, status="submitted", address=b.address, city=b.city, phone=b.phone, contact_email=b.contact_email, operating_hours=json.dumps(b.operating_hours), services=json.dumps(b.services), ehr_vendor=b.ehr_vendor, ehr_config=json.dumps(b.ehr_config), cover_url=cover_url, external_facility_id=f"ext-fac-{slug}")
     db.add(h); db.commit(); db.refresh(h)
     if u.role == "hospital_admin" and not u.hospital_id: u.hospital_id = h.id; db.commit()
     audit(db, "hospital.apply", "hospital", h.id, h.id, u.id, {"name": b.name}, "")
     ops(db, "hospital.submitted", f"{b.name} submitted", "info", h.id, "", {})
-    return {"id": h.id, "slug": slug, "status": h.status}
+    return {"id": h.id, "slug": slug, "status": h.status, "cover_url": h.cover_url}
 
 @router.get("/hospitals")
 def list_h(db: Session = Depends(get_db), u=Depends(get_current_user), status: str = "", q: str = ""):
@@ -32,7 +35,7 @@ def list_h(db: Session = Depends(get_db), u=Depends(get_current_user), status: s
     elif u.role == "patient": query = query.filter(models.Hospital.status=="approved")
     if status: query = query.filter(models.Hospital.status==status)
     if q: query = query.filter(models.Hospital.name.ilike(f"%{q}%"))
-    return [{"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"city":h.city,"phone":h.phone,"contact_email":h.contact_email,"services":h.services,"ehr_vendor":h.ehr_vendor,"review_notes":h.review_notes} for h in query.limit(100).all()]
+    return [{"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"city":h.city,"phone":h.phone,"contact_email":h.contact_email,"services":h.services,"ehr_vendor":h.ehr_vendor,"cover_url":h.cover_url,"review_notes":h.review_notes} for h in query.limit(100).all()]
 
 @router.get("/hospitals/{hid}")
 def get_h(hid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -40,7 +43,7 @@ def get_h(hid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
     if not h: raise HTTPException(404)
     tenant_hospital_id(u, hid if u.role!="platform_admin" else None)
     if u.role=="patient" and h.status!="approved": raise HTTPException(403)
-    return {"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"address":h.address,"city":h.city,"phone":h.phone,"contact_email":h.contact_email,"operating_hours":h.operating_hours,"services":h.services,"ehr_vendor":h.ehr_vendor,"ehr_config":h.ehr_config,"review_notes":h.review_notes,"external_facility_id":h.external_facility_id}
+    return {"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"address":h.address,"city":h.city,"phone":h.phone,"contact_email":h.contact_email,"operating_hours":h.operating_hours,"services":h.services,"ehr_vendor":h.ehr_vendor,"ehr_config":h.ehr_config,"cover_url":h.cover_url,"review_notes":h.review_notes,"external_facility_id":h.external_facility_id}
 
 @router.patch("/hospitals/{hid}")
 def patch_h(hid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):

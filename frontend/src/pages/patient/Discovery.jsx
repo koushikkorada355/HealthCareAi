@@ -12,7 +12,7 @@ export function Hospitals() {
     <input className="input mb-4 max-w-md" placeholder="Search hospitals…" value={q} onChange={e => setQ(e.target.value)} />
     <div className="grid md:grid-cols-2 gap-4">{list.map(h => (
       <Card key={h.id} className="card-hover !p-0 overflow-hidden">
-        <Cover src={hospitalCover(h.slug)} height={140}>
+        <Cover src={h.cover_url || hospitalCover(h.slug)} height={140}>
           <div className="flex items-end justify-between gap-2">
             <span className="font-display text-lg font-semibold text-white drop-shadow">{h.name}</span>
             <Pill value={h.status} />

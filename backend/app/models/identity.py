@@ -31,6 +31,7 @@ class Hospital(Base):
     services: Mapped[str] = mapped_column(Text, default="[]")
     ehr_vendor: Mapped[str] = mapped_column(String(64), default="mock")
     ehr_config: Mapped[str] = mapped_column(Text, default="{}")
+    cover_url: Mapped[str] = mapped_column(String(512), default="")
     review_notes: Mapped[str] = mapped_column(Text, default="")
     external_facility_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

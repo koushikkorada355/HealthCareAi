@@ -24,7 +24,7 @@ export function Doctors() {
   useEffect(() => { load(); if (hid) api(`/hospitals/${hid}/specialties`).then(setSpecs).catch(() => {}) }, [hid])
   return <div><PageHead title="Doctors" sub="Lifecycle: invited → active → inactive/suspended." right={<span className="text-sm text-ink-soft">{rows.length} doctors</span>} />
     <div className="grid md:grid-cols-3 gap-4">
-      <div className="md:col-span-2 space-y-3">{rows.map(d => <Card key={d.id} className="flex items-center gap-4"><Avatar name={d.name} size={48} /><div className="flex-1"><div className="font-bold">{d.name}</div><div className="text-sm text-ink-soft">{d.specialty} · {d.experience_years}y · ★ {d.rating}</div></div><Pill value={d.status} /><Link to={`/hospital/doctors/${d.id}`} className="btn-ghost text-xs">Manage</Link></Card>)}</div>
+      <div className="md:col-span-2 space-y-3">{rows.map(d => <Card key={d.id} className="flex items-center gap-4"><Avatar name={d.name} size={48} photo={d.photo_url} seed={d.id} plain={false} /><div className="flex-1"><div className="font-bold">{d.name}</div><div className="text-sm text-ink-soft">{d.specialty} · {d.experience_years}y · ★ {d.rating}</div></div><Pill value={d.status} /><Link to={`/hospital/doctors/${d.id}`} className="btn-ghost text-xs">Manage</Link></Card>)}</div>
       <Card><div className="font-bold mb-2">Add doctor</div>
         <input className="input mb-2" placeholder="Name" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
         <select className="input mb-2" value={f.specialty_id} onChange={e => setF({ ...f, specialty_id: e.target.value })}><option value="">Specialty…</option>{specs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
@@ -38,6 +38,7 @@ export function DoctorDetail() {
   useEffect(() => { api(`/doctors/${id}`).then(setD).catch(() => {}) }, [id])
   if (!d) return <div className="p-8">Loading…</div>
   return <div><PageHead title={d.name} right={<select className="input !w-auto" value={d.status} onChange={async e => { await api(`/doctors/${id}`, { method: 'PATCH', body: { status: e.target.value } }); setD({ ...d, status: e.target.value }) }}>{['invited', 'active', 'inactive', 'suspended'].map(s => <option key={s}>{s}</option>)}</select>} />
+    <div className="flex items-center gap-4 mb-4"><Avatar name={d.name} size={64} photo={d.photo_url} seed={d.id} plain={false} /><div className="text-sm text-ink-soft">Auto Unsplash photo — no upload needed.</div></div>
     <div className="grid md:grid-cols-2 gap-4"><Card><div className="text-sm space-y-1"><div><b>Specialty:</b> {d.specialty}</div><div><b>External provider ID:</b> <code>{d.external_provider_id}</code></div><div><b>Duration:</b> {d.duration_minutes} min</div></div></Card>
     <Card><div className="font-bold mb-2">Calendars</div>{d.calendars?.map(c => <div key={c.id} className="text-sm py-1.5 border-t border-slate-100">{c.name} · {c.is_active ? 'active' : 'paused'}</div>)}</Card></div></div>
 }

@@ -161,7 +161,7 @@ export function BookFind() {
         {hospitals.map(h => (
           <button key={h.id} type="button" onClick={() => setHospId(String(h.id) === hospId ? '' : String(h.id))}
             className={`group relative h-28 overflow-hidden rounded-2xl text-left shadow-card transition hover:-translate-y-0.5 ${String(h.id) === hospId ? 'ring-4 ring-brand' : ''}`}>
-            <img src={hospitalCover(h.slug)} alt={h.name} loading="lazy" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105"
+            <img src={h.cover_url || hospitalCover(h.slug)} alt={h.name} loading="lazy" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105"
               onError={(e) => { e.currentTarget.style.display = 'none' }} />
             <div className="absolute inset-0 bg-gradient-to-r from-brand-ink/80 via-brand-ink/40 to-transparent" />
             <div className="absolute bottom-2.5 left-4 right-4">
