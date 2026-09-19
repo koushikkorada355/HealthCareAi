@@ -13,6 +13,14 @@ router = APIRouter(tags=["ai"])
 
 @router.post("/ai/chat")
 async def chat(body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    import logging as _logging
+    import os as _os
+    if _os.getenv("AI_ASSISTANT_V2", "1").lower() in ("1", "true", "yes"):
+        try:
+            from ...ai_assistant.services.assistant import run_turn
+            return await run_turn(db, u, body)
+        except Exception:
+            _logging.getLogger("careaccess").exception("ai_assistant v2 failed; legacy fallback")
     text = (body.get("message") or "").strip()
     corr = body.get("correlation_id") or new_corr()
     conv_id = body.get("conversation_id")

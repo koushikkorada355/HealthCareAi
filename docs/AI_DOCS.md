@@ -18,3 +18,16 @@ Blocklist for diagnose/prescribe/dosage patterns → refusal + care-team note + 
 
 ## Evaluation
 Track: conversations, capability success/fail, escalation rate, latency (`ai_messages.latency_ms`, `capability_executions`), `ai_evaluations` table; admin AI Activity page surfaces traces.
+
+## AI Assistant Layer v2 (`app/ai_assistant/`, serves `POST /ai/chat` when `AI_ASSISTANT_V2=1`)
+Dedicated LangGraph orchestration on top of the existing platform (Project2.pdf §§9–10, 20, 23–26).
+No rebuilt backend, no duplicated models/services, no direct DB/EHR access from the LLM.
+
+- **Flow:** conversation → context → classification → STRICT safety → scope → clarification → tool_router → tool_result → response (explicit conditional edges; `graph/graph.py` composes, all logic in `nodes/`).
+- **State** (`graph/state.py`): conversation/user ids, bounded message window + summary, intent, classification, safety verdict, context refs (ids only), pending clarification/confirmation, selected tool + args, tool result + status, transfer, reply/trace/data. Application DB stays the source of truth.
+- **Safety (architectural, not prompts):** deterministic policy (`safety/policy.py`: clinical/urgent/injection lists) beats any LLM second signal; urgent → emergency direction + human handoff; tool gating (reads free, writes only after explicit confirm with fresh idempotency key); response validator rejects invented slots/doctors/diagnoses pre-send. Denied turns never reach MCP (proven: zero `capability_executions` rows).
+- **MCP:** `mcp/client.py` (timeout + normalized `{ok,code,data|error}`) + `mcp/adapter.py` (per-tool schemas validated pre-call) over the existing `registry.invoke` (22 tools). Confirm loop: write intents → echo-back summary → user yes → execute once (pending consumed; double-confirm is a no-op) → verified-result reply.
+- **LLM:** provider-independent `services/llm.py` (`BaseLLM`; Grok structured-output impl; deterministic fallback reusing the v1 keyword interpreter with the `ent`-substring quirk fixed). Grok rephrases verified facts only.
+- **Cutover:** `services/assistant.py run_turn()` owns the turn (conversation rows, slice persistence incl. pending, `graph_run_id`/`tool_call_id` observability, id-only logging); `POST /ai/chat` response shape unchanged plus `graph_run_id` + `safety`. Old path remains as exception fallback.
+- **Channel-independent:** normalized text in, structured envelope out; `channel` passes through for web/voice/telephone. No voice changes in this build.
+- **Tests:** `app/tests/test_ai_assistant_*.py` (60 cases: foundation, graph, 15-case safety battery, MCP confirm-loop, service/validator, gaps) + untouched legacy suites. Full suite green offline.
