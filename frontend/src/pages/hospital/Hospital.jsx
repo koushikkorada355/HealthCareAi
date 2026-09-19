@@ -90,32 +90,33 @@ export function Dash() {
     </div></div>
 }
 export function Doctors() {
-  const hid = useHid(); const [rows, setRows] = useState([]); const [f, setF] = useState({ name: '', specialty_id: '', department_id: '', email: '', duration_minutes: 30, modes: ['in_person'] }); const [specs, setSpecs] = useState([]); const [depts, setDepts] = useState([]); const [creds, setCreds] = useState(null); const [msg, setMsg] = useState('')
+  const hid = useHid(); const [rows, setRows] = useState([]); const [f, setF] = useState({ name: '', specialty_id: '', department_id: '', email: '', duration_minutes: 30, modes: ['in_person'] }); const [specs, setSpecs] = useState([]); const [depts, setDepts] = useState([]); const [added, setAdded] = useState(null); const [msg, setMsg] = useState('')
   const load = () => hid && api(`/doctors?hospital_id=${hid}`).then(setRows).catch(() => {})
   useEffect(() => { load(); if (hid) { api(`/hospitals/${hid}/specialties`).then(setSpecs).catch(() => {}); api(`/hospitals/${hid}/departments`).then(setDepts).catch(() => {}) } }, [hid])
   const toggleMode = (m) => setF({ ...f, modes: f.modes.includes(m) ? f.modes.filter(x => x !== m) : [...f.modes, m] })
   const create = async () => {
-    setMsg(''); setCreds(null)
+    setMsg(''); setAdded(null)
     if (!f.name.trim()) { setMsg('Name is required.'); return }
+    if (!f.email.trim()) { setMsg('Doctor login email is required — the doctor registers first, then you link their email.'); return }
     if (!f.modes.length) { setMsg('Pick at least one consultation type.'); return }
     try {
-      const r = await api('/doctors', { method: 'POST', body: { hospital_id: hid, name: f.name.trim(), specialty_id: f.specialty_id ? Number(f.specialty_id) : null, department_id: f.department_id ? Number(f.department_id) : null, email: f.email, duration_minutes: Number(f.duration_minutes) || 30, consultation_types: f.modes } })
+      const r = await api('/doctors', { method: 'POST', body: { hospital_id: hid, name: f.name.trim(), specialty_id: f.specialty_id ? Number(f.specialty_id) : null, department_id: f.department_id ? Number(f.department_id) : null, email: f.email.trim(), duration_minutes: Number(f.duration_minutes) || 30, consultation_types: f.modes } })
       setF({ name: '', specialty_id: '', department_id: '', email: '', duration_minutes: 30, modes: ['in_person'] }); load()
-      if (r.login_email) setCreds(r); else setMsg(`Doctor created (ID #${r.id}). No login — add an email to create one.`)
-    } catch (e) { setMsg(`Could not create: ${e.message}`) }
+      setAdded(r)
+    } catch (e) { setMsg(`Could not add: ${e.message}`) }
   }
   return <div><PageHead title="Doctors" sub="Lifecycle: invited → active → inactive/suspended. Only active doctors take future bookings." right={<span className="text-sm text-ink-soft">{rows.length} doctors</span>} />
     {hid === undefined && <div className="text-ink-soft">Loading…</div>}
     {hid === null && <Card><Empty title="No hospital yet" sub="Register your hospital for System Admin review first." /><Link to="/hospitals/apply" className="btn-primary text-sm mt-3 inline-block">Register hospital →</Link></Card>}
     {msg && <div className="card p-3 mb-3 text-sm">{msg}</div>}
-    {creds && <Card className="mb-3 !border-emerald-300"><div className="font-bold">Doctor ID handoff — share by hand, shown once</div><div className="text-sm mt-1">Doctor ID: <code>#{creds.id}</code> · Login email: <code>{creds.login_email}</code> · Temp password: <code>{creds.temp_password}</code></div><div className="text-xs text-ink-soft mt-1">No email is sent. Give these to the doctor in person; they can change the password after first login.</div></Card>}
+    {added && <Card className="mb-3 !border-emerald-300"><div className="font-bold">Doctor linked as invited</div><div className="text-sm mt-1">Doctor ID: <code>#{added.id}</code> · Login: <code>{added.login_email}</code> · Status: <code>invited</code></div><div className="text-xs text-ink-soft mt-1">They keep their own password. Set them active after they accept (doctor phase) or now from Manage.</div></Card>}
     <div className="grid md:grid-cols-3 gap-4">
       <div className="md:col-span-2 space-y-3">{rows.map(d => <Card key={d.id} className="flex items-center gap-4"><Avatar name={d.name} size={48} photo={d.photo_url} seed={d.id} plain={false} /><div className="flex-1"><div className="font-bold">{d.name} <span className="text-xs text-ink-faint">#{d.id}</span></div><div className="text-sm text-ink-soft">{d.specialty} · {d.experience_years}y · ★ {d.rating}</div></div><Pill value={d.status} /><Link to={`/hospital/doctors/${d.id}`} className="btn-ghost text-xs">Manage</Link></Card>)}</div>
       <Card><div className="font-bold mb-2">Add doctor</div>
         <input className="input mb-2" placeholder="Name" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
         <select className="input mb-2" value={f.specialty_id} onChange={e => setF({ ...f, specialty_id: e.target.value })}><option value="">Specialty…</option>{specs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
         <select className="input mb-2" value={f.department_id} onChange={e => setF({ ...f, department_id: e.target.value })}><option value="">Department…</option>{depts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-        <input className="input mb-2" placeholder="Login email (optional — creates login)" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} />
+        <input className="input mb-2" placeholder="Doctor login email (must be registered)" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} />
         <input className="input mb-2" type="number" min="5" step="5" aria-label="Consultation duration minutes" value={f.duration_minutes} onChange={e => setF({ ...f, duration_minutes: e.target.value })} />
         <div className="flex gap-2 mb-2 text-sm">{['in_person', 'video', 'phone'].map(m => <label key={m} className="flex items-center gap-1"><input type="checkbox" checked={f.modes.includes(m)} onChange={() => toggleMode(m)} />{m.replace('_', ' ')}</label>)}</div>
         <button className="btn-primary w-full text-sm" onClick={create}>Create + provision calendar</button></Card>
@@ -144,7 +145,7 @@ export function DoctorDetail() {
   if (!d) return <div className="p-8">{msg || 'Loading…'}</div>
   return <div><PageHead title={`${d.name} #${d.id}`} right={<select className="input !w-auto" value={d.status} onChange={async e => { await api(`/doctors/${id}`, { method: 'PATCH', body: { status: e.target.value } }); setD({ ...d, status: e.target.value }) }}>{['invited', 'active', 'inactive', 'suspended'].map(s => <option key={s}>{s}</option>)}</select>} />
     {msg && <div className="card p-3 mb-3 text-sm">{msg}</div>}
-    <div className="flex items-center gap-4 mb-4"><Avatar name={d.name} size={64} photo={d.photo_url} seed={d.id} plain={false} /><div className="text-sm text-ink-soft">Auto Unsplash photo — no upload needed. Login shared by hand at creation.</div></div>
+    <div className="flex items-center gap-4 mb-4"><Avatar name={d.name} size={64} photo={d.photo_url} seed={d.id} plain={false} /><div className="text-sm text-ink-soft">Auto Unsplash photo — no upload needed. Login owned by the doctor since signup.</div></div>
     <div className="grid md:grid-cols-2 gap-4"><Card><div className="font-bold mb-2">Details</div><div className="grid gap-2 text-sm">
       <div><label className="text-xs font-bold">QUALIFICATIONS</label><input className="input mt-1" value={f.qualifications} onChange={e => setF({ ...f, qualifications: e.target.value })} /></div>
       <div className="grid grid-cols-2 gap-2"><div><label className="text-xs font-bold">EXPERIENCE (YRS)</label><input className="input mt-1" type="number" value={f.experience_years} onChange={e => setF({ ...f, experience_years: e.target.value })} /></div><div><label className="text-xs font-bold">DURATION (MIN)</label><input className="input mt-1" type="number" value={f.duration_minutes} onChange={e => setF({ ...f, duration_minutes: e.target.value })} /></div></div>

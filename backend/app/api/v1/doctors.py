@@ -39,28 +39,29 @@ def create_d(b: DocIn, db: Session = Depends(get_db), u=Depends(get_current_user
     if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
     h = db.query(models.Hospital).filter(models.Hospital.id==b.hospital_id).first()
     if not h or h.status!="approved": raise HTTPException(400, "Hospital must be approved")
+    # Adopt-by-email: the doctor signed up alone with their own credentials;
+    # the admin links that login here. No temp passwords are ever created.
+    if not b.email: raise HTTPException(400, "Doctor login email is required (the doctor signs up first, then you add their email)")
+    lu = db.query(models.User).filter(models.User.email==b.email).first()
+    if not lu: raise HTTPException(404, "No account with that email — the doctor must register first")
+    if lu.role != "doctor": raise HTTPException(400, "That account is not a doctor account")
+    if lu.doctor_id or lu.hospital_id: raise HTTPException(400, "That doctor is already linked to a hospital")
     # Auto-assign Unsplash photo on create — never ask admin/doctor for an image.
     from ...utils.photos import doctor_photo_for
     photo_url = doctor_photo_for(f"{b.hospital_id}-{b.name}")
-    d = models.Doctor(hospital_id=b.hospital_id, name=b.name, specialty_id=b.specialty_id, department_id=b.department_id, qualifications=b.qualifications, experience_years=b.experience_years, languages=json.dumps(b.languages), consultation_types=json.dumps(b.consultation_types), duration_minutes=b.duration_minutes, photo_url=photo_url, status="active", external_provider_id=b.external_provider_id or f"ext-prov-{b.hospital_id}-{b.name[:4]}")
+    d = models.Doctor(hospital_id=b.hospital_id, name=b.name, specialty_id=b.specialty_id, department_id=b.department_id, qualifications=b.qualifications, experience_years=b.experience_years, languages=json.dumps(b.languages), consultation_types=json.dumps(b.consultation_types), duration_minutes=b.duration_minutes, photo_url=photo_url, status="invited", external_provider_id=b.external_provider_id or f"ext-prov-{b.hospital_id}-{b.name[:4]}")
     db.add(d); db.commit(); db.refresh(d)
+    lu.doctor_id = d.id; lu.hospital_id = b.hospital_id; db.commit()
     cal = models.Calendar(hospital_id=b.hospital_id, doctor_id=d.id, name="Main", is_active=True, working_hours=json.dumps({"mon":[["09:00","17:00"]],"tue":[["09:00","17:00"]],"wed":[["09:00","17:00"]],"thu":[["09:00","17:00"]],"fri":[["09:00","15:00"]]}))
     db.add(cal); db.commit(); db.refresh(cal)
     for wd in range(5):
         db.add(models.AvailabilityRule(calendar_id=cal.id, weekday=wd, start_time="09:00", end_time="17:00" if wd<4 else "15:00", slot_minutes=b.duration_minutes))
     db.commit()
-    if b.email and not db.query(models.User).filter(models.User.email==b.email).first():
-        from ...core.security import hash_password
-        import secrets as _secrets
-        temp_password = f"Doc-{_secrets.token_hex(3)}"
-        db.add(models.User(email=b.email, password_hash=hash_password(temp_password), role="doctor", full_name=b.name, hospital_id=b.hospital_id, doctor_id=d.id)); db.commit()
-    else:
-        temp_password = ""
-    audit(db, "doctor.create", "doctor", d.id, b.hospital_id, u.id, {"name": b.name}, "")
+    audit(db, "doctor.create", "doctor", d.id, b.hospital_id, u.id, {"name": b.name, "via": "adopt"}, "")
     from ...services.workflows import fire_event
     fire_event(db, "doctor.created", b.hospital_id, {"doctor_id": d.id}, "")
-    # No email is sent: hand the login ID + temp password to the doctor by hand.
-    return {"id": d.id, "calendar_id": cal.id, "photo_url": d.photo_url, "login_email": b.email or "", "temp_password": temp_password}
+    # The doctor keeps their own credentials — nothing to hand over.
+    return {"id": d.id, "calendar_id": cal.id, "photo_url": d.photo_url, "login_email": lu.email, "status": d.status}
 
 @router.get("/doctors/{did}")
 def get_d(did: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -129,3 +130,28 @@ def delete_d(did: int, db: Session = Depends(get_db), u=Depends(get_current_user
     if lu: lu.is_active = False; db.commit()
     audit(db, "doctor.deactivate", "doctor", did, d.hospital_id, u.id, {"via": "delete"}, "")
     return {"ok": True, "status": "inactive"}
+
+@router.post("/doctors/{did}/accept")
+def accept_d(did: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    """Doctor accepts their hospital invite (doctor phase). invited -> active."""
+    if u.role != "doctor": raise HTTPException(403, "Only the invited doctor can accept")
+    if u.doctor_id != did: raise HTTPException(403, "Not your invite")
+    d = db.query(models.Doctor).filter(models.Doctor.id==did).first()
+    if not d: raise HTTPException(404)
+    if d.status != "invited": raise HTTPException(400, f"Invite is already {d.status}")
+    d.status = "active"; db.commit()
+    audit(db, "doctor.accept", "doctor", did, d.hospital_id, u.id, {}, "")
+    return {"ok": True, "status": "active"}
+
+@router.post("/doctors/{did}/decline")
+def decline_d(did: int, body: dict | None = None, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    """Doctor declines the invite: link dissolved, profile closed."""
+    if u.role != "doctor": raise HTTPException(403, "Only the invited doctor can decline")
+    if u.doctor_id != did: raise HTTPException(403, "Not your invite")
+    d = db.query(models.Doctor).filter(models.Doctor.id==did).first()
+    if not d: raise HTTPException(404)
+    if d.status != "invited": raise HTTPException(400, f"Invite is already {d.status}")
+    d.status = "inactive"; db.commit()
+    u.doctor_id = None; u.hospital_id = None; db.commit()
+    audit(db, "doctor.decline", "doctor", did, d.hospital_id, u.id, {"reason": (body or {}).get("reason", "")}, "")
+    return {"ok": True, "status": "declined"}

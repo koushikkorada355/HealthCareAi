@@ -28,13 +28,13 @@ export function Register() {
   const [f, setF] = useState({ full_name: '', email: '', password: 'password123', phone: '' })
   const [role, setRole] = useState('patient')
   const [err, setErr] = useState('')
-  const go = async (e) => { e.preventDefault(); setErr(''); try { const u = await register({ ...f, role }); nav(u.role === 'hospital_admin' ? '/hospitals/apply' : '/app') } catch (ex) { setErr(ex.message) } }
+  const go = async (e) => { e.preventDefault(); setErr(''); try { const u = await register({ ...f, role }); nav(u.role === 'hospital_admin' ? '/hospitals/apply' : u.role === 'doctor' ? '/doctor' : '/app') } catch (ex) { setErr(ex.message) } }
   return (
     <div className="min-h-screen flex items-center justify-center p-5">
       <form onSubmit={go} className="card p-7 w-full max-w-md fade-in">
-        <div className="font-display text-2xl mb-1">{role === 'hospital_admin' ? 'Create hospital admin account' : 'Create patient account'}</div>
-        <p className="text-sm text-ink-soft mb-4">{role === 'hospital_admin' ? 'Then register your hospital for System Admin review.' : 'Book verified appointments in minutes.'}</p>
-        <div className="flex gap-2 mb-4">{[['patient', 'Patient'], ['hospital_admin', 'Hospital admin']].map(([v, l]) => <button key={v} type="button" onClick={() => setRole(v)} className={role === v ? 'btn-primary text-sm flex-1' : 'btn-ghost text-sm flex-1'}>{l}</button>)}</div>
+        <div className="font-display text-2xl mb-1">{role === 'hospital_admin' ? 'Create hospital admin account' : role === 'doctor' ? 'Create doctor account' : 'Create patient account'}</div>
+        <p className="text-sm text-ink-soft mb-4">{role === 'hospital_admin' ? 'Then register your hospital for System Admin review.' : role === 'doctor' ? 'Then share your login email with your hospital admin to be added.' : 'Book verified appointments in minutes.'}</p>
+        <div className="flex gap-2 mb-4">{[['patient', 'Patient'], ['hospital_admin', 'Hospital admin'], ['doctor', 'Doctor']].map(([v, l]) => <button key={v} type="button" onClick={() => setRole(v)} className={role === v ? 'btn-primary text-sm flex-1' : 'btn-ghost text-sm flex-1'}>{l}</button>)}</div>
         {[['full_name', 'Full name'], ['email', 'Email'], ['phone', 'Phone'], ['password', 'Password']].map(([k, l]) => (
           <div key={k} className="mb-3"><label className="text-xs font-semibold">{l}</label>
           <input className="input mt-1" type={k === 'password' ? 'password' : 'text'} value={f[k]} onChange={e => setF({ ...f, [k]: e.target.value })} required={k !== 'phone'} /></div>

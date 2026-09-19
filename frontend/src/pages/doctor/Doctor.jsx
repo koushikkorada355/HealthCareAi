@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../../api/client.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { Card, PageHead, Pill, Avatar, Empty } from '../../components/ui.jsx'
 
 function AiBadge({ a }) {
@@ -9,8 +10,10 @@ function AiBadge({ a }) {
 }
 
 export function Dash() {
+  const { user } = useAuth()
   const [d, setD] = useState(null); const [today, setToday] = useState([])
   useEffect(() => { api('/dashboard/doctor').then(setD).catch(() => {}); api('/appointments').then(r => setToday(r.slice(0, 8))).catch(() => {}) }, [])
+  if (user && !user.doctor_id) return <div><PageHead title="Doctor dashboard" sub="Your hospital invite is pending." /><Card><Empty title="Awaiting hospital" sub="Share your login email with your hospital admin. After they add you, accept the invite here." /></Card></div>
   const stats = [['TODAY', d?.today], ['UPCOMING', d?.upcoming], ['COMPLETED', d?.completed], ['AI-BOOKED TODAY', d?.ai_today], ['QUESTIONNAIRES DUE', d?.questionnaires_due]]
   return <div><PageHead title="Doctor dashboard" sub="Your day, availability and pre-visit readiness — including AI-booked visits." />
     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

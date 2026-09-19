@@ -21,10 +21,11 @@ def _tok(u):
 
 @router.post("/auth/register")
 def register(b: Register, db: Session = Depends(get_db)):
-    # Public signup: patients and hospital admins only. Doctors are created by
-    # their hospital admin (ID handoff); platform admins are seeded. Hospital
-    # binding happens only at /hospitals/apply, never from this payload.
-    if b.role not in ("patient","hospital_admin"): raise HTTPException(400, "Public registration is open for patient and hospital admin accounts")
+    # Public signup: patients, hospital admins and doctors. Doctors sign up
+    # unbound (no profile yet); a hospital admin adopts them by login email
+    # and they accept in the doctor phase. Platform admins are seeded.
+    # Hospital binding happens only at /hospitals/apply, never from this payload.
+    if b.role not in ("patient","hospital_admin","doctor"): raise HTTPException(400, "Public registration is open for patient, hospital admin and doctor accounts")
     if db.query(models.User).filter(models.User.email==b.email).first(): raise HTTPException(400, "Email exists")
     u = models.User(email=b.email, password_hash=hash_password(b.password), role=b.role, full_name=b.full_name, hospital_id=None)
     db.add(u); db.commit(); db.refresh(u)
