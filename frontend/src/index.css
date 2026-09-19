@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { @apply bg-canvas text-ink font-sans antialiased; }
+
+/* ---------- MediConnect template primitives ---------- */
+.card { @apply bg-white rounded-2xl shadow-card border border-slate-100 animate-fade-up; }
+.card-hover { @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-lift; }
+.btn-primary { @apply inline-flex items-center justify-center gap-2 bg-brand hover:bg-brand-deep text-white font-semibold rounded-xl px-5 py-2.5 transition-all duration-200 hover:shadow-lift active:scale-[.98]; }
+.btn-accent { @apply inline-flex items-center justify-center gap-2 bg-apricot hover:bg-apricot-deep text-white font-semibold rounded-xl px-5 py-2.5 transition-all duration-200 active:scale-[.98]; }
+.btn-ghost { @apply inline-flex items-center justify-center gap-2 border border-slate-200 hover:border-brand hover:text-brand-deep bg-white rounded-xl px-4 py-2 transition-all duration-200; }
+.input { @apply w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white transition; }
+.pill { @apply inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-2.5 py-1; }
+.side-link { @apply flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-ink-soft hover:bg-brand-soft hover:text-brand-ink transition-all duration-200; }
+.side-link.active { @apply bg-brand text-white hover:text-white shadow-lift; }
+.tbl th { @apply text-left text-xs uppercase tracking-wide text-slate-500 font-semibold pb-2; }
+.tbl td { @apply py-3 border-t border-slate-100 text-sm; }
+.chatdoc h1, .chatdoc h2, .chatdoc strong { @apply font-semibold; }
+
+/* stagger helper: style={{ '--d': '80ms' }} */
+.stagger > * { animation: fade-up .5s cubic-bezier(.22,.68,.32,1) both; animation-delay: var(--d, 0ms); }
+.stagger > *:nth-child(1) { --d: 0ms; } .stagger > *:nth-child(2) { --d: 70ms; }
+.stagger > *:nth-child(3) { --d: 140ms; } .stagger > *:nth-child(4) { --d: 210ms; }
+.stagger > *:nth-child(5) { --d: 280ms; } .stagger > *:nth-child(6) { --d: 350ms; }
+.stagger > *:nth-child(7) { --d: 420ms; } .stagger > *:nth-child(8) { --d: 490ms; }
+
+/* voice orb */
+.orb { animation: pulse-ring 2.2s ease-out infinite; }
+/* legacy class kept for compat */
+.fade-in { animation: fade-up .35s ease both; }
+
+/* skeleton shimmer */
+.skeleton { background: linear-gradient(90deg, #e8edf3 25%, #f6f9fc 50%, #e8edf3 75%); background-size: 800px 100%; animation: shimmer 1.4s linear infinite; }
+
+/* animated gradient hero */
+.hero-gradient { background: linear-gradient(120deg, #0C2B6B, #1E6FF5 55%, #5B9BFF 80%, #FF8A3D 130%); background-size: 220% 220%; animation: hero-pan 12s ease infinite; }
+@keyframes hero-pan { 0%,100% { background-position: 0% 40%; } 50% { background-position: 100% 60%; } }
+
+/* chat typing dots */
+.dot { width: 7px; height: 7px; border-radius: 9999px; background: #8CA0B3; animation: blink 1s infinite; }
+.dot:nth-child(2) { animation-delay: .15s; } .dot:nth-child(3) { animation-delay: .3s; }
+@keyframes blink { 0%,100% { opacity: .25; } 50% { opacity: 1; } }

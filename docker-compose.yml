@@ -1,0 +1,136 @@
+# ============================================================================
+# MediConnect Platform — local development / demo stack
+# ============================================================================
+# HOST REQUIREMENTS (nothing else is installed on the host):
+#   - Docker Engine 24+  (https://docs.docker.com/engine/install)
+#   - Docker Compose v2  (`docker compose version`)
+#   - 4 GB free RAM, ports 8080, 8002, 8001, 5434 free (frontend/backend/EHR/db)
+#
+# IMAGES (all pulled automatically on first `docker compose up --build`):
+#   - postgres:16-alpine        → PostgreSQL 16 database (pulled from Docker Hub)
+#   - node:20-alpine            → build stage: compiles React/Vite frontend
+#   - nginx:alpine              → runtime stage: serves frontend + proxies /api
+#   - python:3.12-slim          → runtime base for backend + mock-ehr (built locally)
+#   - careaccess-backend        → built from ./backend/Dockerfile
+#   - careaccess-mock-ehr       → built from ./mock-ehr/Dockerfile
+#   - careaccess-frontend       → built from ./frontend/Dockerfile
+#
+# START:  docker compose up --build
+# STOP:   docker compose down        (data persists in `pgdata` volume)
+# RESET:  docker compose down -v    (deletes database volume)
+# ============================================================================
+
+# Unique project name → containers are careaccess-*, never colliding with
+# your other project's containers.
+name: careaccess
+
+services:
+  # --------------------------------------------------------------------------
+  # PostgreSQL — authoritative business database (persistent volume `pgdata`)
+  # Image: postgres:16-alpine (Docker Hub, ~240 MB)
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-care}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-carepass}
+      POSTGRES_DB: ${POSTGRES_DB:-careplatform}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Host port is non-default (5434) to avoid clashing with other local
+      # Postgres instances. Override: POSTGRES_PORT=5435 docker compose up
+      - "${POSTGRES_PORT:-5434}:5432"
+    networks:
+      - care-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-care} -d ${POSTGRES_DB:-careplatform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Mock EHR — fake external healthcare system (replaceable connector target)
+  # Image: built locally (python:3.12-slim + fastapi/uvicorn) → careaccess-mock-ehr
+  # --------------------------------------------------------------------------
+  mock-ehr:
+    build:
+      context: ./mock-ehr
+      dockerfile: Dockerfile
+    image: careaccess-mock-ehr:local
+    environment:
+      MOCK_EHR_API_KEY: ${MOCK_EHR_API_KEY:-mock-ehr-dev-key}
+    ports:
+      - "8001:8001"
+    networks:
+      - care-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Backend — FastAPI + LangGraph + MCP (serves /api/v1/* and /docs)
+  # Image: built locally (python:3.12-slim + requirements.txt) → careaccess-backend
+  # Needs: DATABASE_URL, JWT_SECRET, GROK_API_KEY (optional), MOCK_EHR_URL
+  # --------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: careaccess-backend:local
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-care}:${POSTGRES_PASSWORD:-carepass}@postgres:5432/${POSTGRES_DB:-careplatform}
+      MOCK_EHR_URL: http://mock-ehr:8001
+    ports:
+      # Host port is non-default (8002): your other project already holds 8000.
+      # Override: BACKEND_PORT=8010 docker compose up
+      - "${BACKEND_PORT:-8002}:8000"
+    networks:
+      - care-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mock-ehr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Frontend — React/Vite build served by nginx (same-origin /api proxy)
+  # Image: built locally (node:20-alpine build → nginx:alpine) → careaccess-frontend
+  # --------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: careaccess-frontend:local
+    ports:
+      # Host port is non-default (8080) to avoid clashing with other local
+      # frontend dev servers. Override: FRONTEND_PORT=8090 docker compose up
+      - "${FRONTEND_PORT:-8080}:80"
+    networks:
+      - care-net
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  care-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+    name: careaccess-pgdata
