@@ -149,10 +149,11 @@ async def chat(body: dict, db: Session = Depends(get_db), u=Depends(get_current_
                             dd = d
                         prior["doctor_id"] = dd.get("id")
                         slots = "; ".join(s["starts_at"][:16].replace("T", " ") for s in (dd.get("next_slots") or [])[:3]) or "checking calendar"
+                        rev = dd.get("reviews_summary") or "No patient reviews yet."
                         base = (f"**{dd.get('name')}** — {dd.get('specialty','')} · {dd.get('experience_years',0)}y exp · ★ {dd.get('rating',0)}\n"
                                 f"{dd.get('hospital_name','')} ({dd.get('hospital_city','')}) · {dd.get('qualifications','')}\n"
                                 f"Languages: {dd.get('languages','')} · Completed visits: {dd.get('completed_visits',0)}\n"
-                                f"Next slots: {slots}\nRating: {dd.get('avg_rating',0)} ({dd.get('review_count',0)} reviews) — No patient reviews yet.\n\n"
+                                f"Next slots: {slots}\nRating: {dd.get('avg_rating',0)} ({dd.get('review_count',0)} reviews) — {rev}\n\n"
                                 f"Want slots, booking, or another doctor?")
                         reply, used = await formulate_reply(g, {"message": base})
                         powered_by = "grok" if used else "rules"

@@ -57,9 +57,11 @@ def list_h(db: Session = Depends(get_db), u=Depends(get_current_user), status: s
     if city: query = query.filter(models.Hospital.city.ilike(f"%{city}%"))
     if q: query = query.filter(models.Hospital.name.ilike(f"%{q}%"))
     out = []
+    from .reviews import hospital_review_stats
     for h in query.limit(100).all():
         dcnt = db.query(_func.count(models.Doctor.id)).filter(models.Doctor.hospital_id==h.id, models.Doctor.status=="active").scalar() or 0
-        out.append({"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"city":h.city,"address":h.address,"phone":h.phone,"contact_email":h.contact_email,"services":h.services,"operating_hours":h.operating_hours,"ehr_vendor":h.ehr_vendor,"cover_url":h.cover_url,"doctor_count":dcnt,"avg_rating":0.0,"review_count":0,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes})
+        _rc, _ra = hospital_review_stats(db, h.id)
+        out.append({"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"city":h.city,"address":h.address,"phone":h.phone,"contact_email":h.contact_email,"services":h.services,"operating_hours":h.operating_hours,"ehr_vendor":h.ehr_vendor,"cover_url":h.cover_url,"doctor_count":dcnt,"avg_rating":_ra,"review_count":_rc,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes})
     return out
 
 @router.get("/hospitals/{hid}")
@@ -78,7 +80,9 @@ def get_h(hid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
     admins = [{"id":x.id,"email":x.email,"full_name":x.full_name,"is_active":x.is_active} for x in db.query(models.User).filter(models.User.hospital_id==hid, models.User.role=="hospital_admin").all()]
     conns = [{"id":c.id,"vendor":c.vendor,"base_url":c.base_url,"status":c.status} for c in db.query(models.HealthcareConnection).filter(models.HealthcareConnection.hospital_id==hid).all()]
     specs = [{"id":s.id,"name":s.name} for s in db.query(models.Specialty).filter((models.Specialty.hospital_id==hid)|(models.Specialty.hospital_id==None)).all()]
-    return {"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"address":h.address,"city":h.city,"phone":h.phone,"contact_email":h.contact_email,"operating_hours":h.operating_hours,"services":h.services,"ehr_vendor":h.ehr_vendor,"ehr_config":h.ehr_config,"cover_url":h.cover_url,"departments":depts,"specialties":specs,"doctor_count":len(docs),"doctors":doc_list,"admins":admins,"connections":conns,"avg_rating":0.0,"review_count":0,"completed_visits":db.query(_func.count(models.Appointment.id)).filter(models.Appointment.hospital_id==hid, models.Appointment.status=="completed").scalar() or 0,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes,"external_facility_id":h.external_facility_id}
+    from .reviews import hospital_review_stats
+    _rc, _ra = hospital_review_stats(db, hid)
+    return {"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"address":h.address,"city":h.city,"phone":h.phone,"contact_email":h.contact_email,"operating_hours":h.operating_hours,"services":h.services,"ehr_vendor":h.ehr_vendor,"ehr_config":h.ehr_config,"cover_url":h.cover_url,"departments":depts,"specialties":specs,"doctor_count":len(docs),"doctors":doc_list,"admins":admins,"connections":conns,"avg_rating":_ra,"review_count":_rc,"completed_visits":db.query(_func.count(models.Appointment.id)).filter(models.Appointment.hospital_id==hid, models.Appointment.status=="completed").scalar() or 0,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes,"external_facility_id":h.external_facility_id}
 
 @router.post("/hospitals/{hid}/submit")
 def resubmit(hid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -145,6 +149,25 @@ def add_dept(hid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_
     d = models.Department(hospital_id=hid, name=body["name"], description=body.get("description","")); db.add(d); db.commit(); db.refresh(d)
     audit(db, "department.create", "department", d.id, hid, u.id, body, ""); return {"id": d.id}
 
+@router.patch("/hospitals/{hid}/departments/{did}")
+def patch_dept(hid: int, did: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    if u.role=="hospital_admin" and u.hospital_id!=hid: raise HTTPException(403)
+    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
+    d = db.query(models.Department).filter(models.Department.id==did, models.Department.hospital_id==hid).first()
+    if not d: raise HTTPException(404)
+    if "name" in body: d.name = body["name"]
+    if "description" in body: d.description = body["description"]
+    db.commit(); audit(db, "department.update", "department", did, hid, u.id, body, ""); return {"ok": True}
+
+@router.delete("/hospitals/{hid}/departments/{did}")
+def del_dept(hid: int, did: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    if u.role=="hospital_admin" and u.hospital_id!=hid: raise HTTPException(403)
+    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
+    d = db.query(models.Department).filter(models.Department.id==did, models.Department.hospital_id==hid).first()
+    if not d: raise HTTPException(404)
+    if db.query(models.Doctor).filter(models.Doctor.department_id==did).first(): raise HTTPException(400, "Department has doctors assigned")
+    db.delete(d); db.commit(); audit(db, "department.delete", "department", did, hid, u.id, {}, ""); return {"ok": True}
+
 @router.get("/hospitals/{hid}/specialties")
 def specs(hid: int, db: Session = Depends(get_db)):
     return [{"id":s.id,"name":s.name} for s in db.query(models.Specialty).filter((models.Specialty.hospital_id==hid)|(models.Specialty.hospital_id==None)).all()]
@@ -152,4 +175,25 @@ def specs(hid: int, db: Session = Depends(get_db)):
 @router.post("/hospitals/{hid}/specialties")
 def add_spec(hid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
     if u.role=="hospital_admin" and u.hospital_id!=hid: raise HTTPException(403)
-    s = models.Specialty(hospital_id=hid, name=body["name"]); db.add(s); db.commit(); db.refresh(s); return {"id": s.id}
+    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
+    s = models.Specialty(hospital_id=hid, name=body["name"]); db.add(s); db.commit(); db.refresh(s)
+    audit(db, "specialty.create", "specialty", s.id, hid, u.id, body, ""); return {"id": s.id}
+
+@router.patch("/hospitals/{hid}/specialties/{sid}")
+def patch_spec(hid: int, sid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    if u.role=="hospital_admin" and u.hospital_id!=hid: raise HTTPException(403)
+    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
+    s = db.query(models.Specialty).filter(models.Specialty.id==sid, models.Specialty.hospital_id==hid).first()
+    if not s: raise HTTPException(404)
+    if "name" in body: s.name = body["name"]
+    if "description" in body: s.description = body["description"]
+    db.commit(); audit(db, "specialty.update", "specialty", sid, hid, u.id, body, ""); return {"ok": True}
+
+@router.delete("/hospitals/{hid}/specialties/{sid}")
+def del_spec(hid: int, sid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    if u.role=="hospital_admin" and u.hospital_id!=hid: raise HTTPException(403)
+    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
+    s = db.query(models.Specialty).filter(models.Specialty.id==sid, models.Specialty.hospital_id==hid).first()
+    if not s: raise HTTPException(404)
+    if db.query(models.Doctor).filter(models.Doctor.specialty_id==sid).first(): raise HTTPException(400, "Specialty has doctors assigned")
+    db.delete(s); db.commit(); audit(db, "specialty.delete", "specialty", sid, hid, u.id, {}, ""); return {"ok": True}

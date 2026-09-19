@@ -10,7 +10,7 @@ import { Hospitals, Doctors, Slots } from './pages/patient/Discovery.jsx'
 import { BookFind, BookSlots } from './pages/patient/Book.jsx'
 import { Upcoming, History, Detail, Questionnaires, QFill, Prefs, Profile } from './pages/patient/Appts.jsx'
 import { Dash as DocDash, ApptList, Calendar, Availability, ApptDetail } from './pages/doctor/Doctor.jsx'
-import { Dash as HDash, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, AIActivity as HAI, Integrations as HInt, Workflows as HWf, Notifications, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
+import { Dash as HDash, Profile as HProfile, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, AIActivity as HAI, Integrations as HInt, Workflows as HWf, Notifications, Reviews as HRev, Activity as HAct, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
 import { Dash as ADash, Applications, ApplicationDetail, TablePage, AIActivity as AAI, Analytics as AAn, OpsHealth } from './pages/admin/Admin.jsx'
 
 const isToday = (a) => new Date(a.starts_at).toDateString() === new Date().toDateString()
@@ -54,6 +54,7 @@ export default function App() {
 
       {/* hospital admin */}
       <Route path="/hospital" element={<Require roles={['hospital_admin']}><HDash /></Require>} />
+      <Route path="/hospital/profile" element={<Require roles={['hospital_admin']}><HProfile /></Require>} />
       <Route path="/hospital/doctors" element={<Require roles={['hospital_admin']}><HDocs /></Require>} />
       <Route path="/hospital/doctors/:id" element={<Require roles={['hospital_admin']}><DoctorDetail /></Require>} />
       <Route path="/hospital/schedules" element={<Require roles={['hospital_admin']}><Schedules /></Require>} />
@@ -63,6 +64,8 @@ export default function App() {
       <Route path="/hospital/integrations" element={<Require roles={['hospital_admin']}><HInt /></Require>} />
       <Route path="/hospital/workflows" element={<Require roles={['hospital_admin']}><HWf /></Require>} />
       <Route path="/hospital/notifications" element={<Require roles={['hospital_admin']}><Notifications /></Require>} />
+      <Route path="/hospital/reviews" element={<Require roles={['hospital_admin']}><HRev /></Require>} />
+      <Route path="/hospital/activity" element={<Require roles={['hospital_admin']}><HAct /></Require>} />
       <Route path="/hospital/analytics" element={<Require roles={['hospital_admin']}><HAn /></Require>} />
       <Route path="/hospital/audit" element={<Require roles={['hospital_admin']}><HAud /></Require>} />
 

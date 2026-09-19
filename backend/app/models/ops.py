@@ -127,3 +127,24 @@ class ReconciliationRecord(Base):
     correlation_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class Review(Base):
+    """Patient review of a doctor or hospital after a completed visit.
+
+    One review per appointment (UNIQUE appointment_id). Hospital Admin sees
+    only their own hospital's rows; responses are the hospital's reply.
+    """
+    __tablename__ = "reviews"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    target_type: Mapped[str] = mapped_column(String(16), index=True)  # doctor|hospital
+    doctor_id: Mapped[int | None] = mapped_column(ForeignKey("doctors.id"), nullable=True, index=True)
+    hospital_id: Mapped[int] = mapped_column(ForeignKey("hospitals.id"), index=True)
+    appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id"), unique=True, index=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
+    rating: Mapped[int] = mapped_column(Integer, default=5)  # 1..5
+    title: Mapped[str] = mapped_column(String(255), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="approved", index=True)  # approved|hidden
+    response_text: Mapped[str] = mapped_column(Text, default="")
+    response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

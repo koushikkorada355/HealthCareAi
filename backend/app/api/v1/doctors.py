@@ -25,10 +25,12 @@ def list_d(db: Session = Depends(get_db), u=Depends(get_current_user), hospital_
         query = query.join(models.Specialty, models.Specialty.id==models.Doctor.specialty_id, isouter=True).filter(models.Specialty.name.ilike(f"%{specialty}%"))
     if q: query = query.filter(models.Doctor.name.ilike(f"%{q}%"))
     out = []
+    from .reviews import doctor_review_stats
     for d in query.limit(100).all():
         sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
         h = db.query(models.Hospital).filter(models.Hospital.id==d.hospital_id).first()
-        out.append({"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","specialty_id":d.specialty_id,"department_id":d.department_id,"qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":0,"avg_rating":d.rating,"external_provider_id":d.external_provider_id})
+        _rc, _ra = doctor_review_stats(db, d.id)
+        out.append({"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","specialty_id":d.specialty_id,"department_id":d.department_id,"qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":_rc,"avg_rating":_ra,"external_provider_id":d.external_provider_id})
     return out
 
 @router.post("/doctors")
@@ -49,11 +51,16 @@ def create_d(b: DocIn, db: Session = Depends(get_db), u=Depends(get_current_user
     db.commit()
     if b.email and not db.query(models.User).filter(models.User.email==b.email).first():
         from ...core.security import hash_password
-        db.add(models.User(email=b.email, password_hash=hash_password("password123"), role="doctor", full_name=b.name, hospital_id=b.hospital_id, doctor_id=d.id)); db.commit()
+        import secrets as _secrets
+        temp_password = f"Doc-{_secrets.token_hex(3)}"
+        db.add(models.User(email=b.email, password_hash=hash_password(temp_password), role="doctor", full_name=b.name, hospital_id=b.hospital_id, doctor_id=d.id)); db.commit()
+    else:
+        temp_password = ""
     audit(db, "doctor.create", "doctor", d.id, b.hospital_id, u.id, {"name": b.name}, "")
     from ...services.workflows import fire_event
     fire_event(db, "doctor.created", b.hospital_id, {"doctor_id": d.id}, "")
-    return {"id": d.id, "calendar_id": cal.id, "photo_url": d.photo_url}
+    # No email is sent: hand the login ID + temp password to the doctor by hand.
+    return {"id": d.id, "calendar_id": cal.id, "photo_url": d.photo_url, "login_email": b.email or "", "temp_password": temp_password}
 
 @router.get("/doctors/{did}")
 def get_d(did: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -67,7 +74,6 @@ def get_d(did: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
     cals = [{"id":c.id,"name":c.name,"is_active":c.is_active,"working_hours":c.working_hours} for c in db.query(models.Calendar).filter(models.Calendar.doctor_id==did).all()]
     completed_visits = db.query(_func.count(models.Appointment.id)).filter(models.Appointment.doctor_id==did, models.Appointment.status=="completed").scalar() or 0
     upcoming_count = db.query(_func.count(models.Appointment.id)).filter(models.Appointment.doctor_id==did, models.Appointment.starts_at>=datetime.now(timezone.utc), models.Appointment.status.in_(["pending","confirmed","rescheduled"])).scalar() or 0
-    # Next 3 real slots (lightweight: today + next 2 days).
     next_slots = []
     try:
         from ...scheduling.engine import compute_slots
@@ -78,7 +84,9 @@ def get_d(did: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
         next_slots = next_slots[:3]
     except Exception:
         next_slots = []
-    return {"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":0,"avg_rating":d.rating,"completed_visits":completed_visits,"upcoming_count":upcoming_count,"next_slots":next_slots,"external_provider_id":d.external_provider_id,"calendars":cals}
+    from .reviews import doctor_review_stats
+    _rcount, _ravg = doctor_review_stats(db, did)
+    return {"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":_rcount,"avg_rating":_ravg,"completed_visits":completed_visits,"upcoming_count":upcoming_count,"next_slots":next_slots,"external_provider_id":d.external_provider_id,"calendars":cals}
 
 @router.patch("/doctors/{did}")
 def patch_d(did: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -89,7 +97,35 @@ def patch_d(did: int, body: dict, db: Session = Depends(get_db), u=Depends(get_c
     if u.role not in ("platform_admin","hospital_admin","doctor"): raise HTTPException(403)
     for k in ("name","qualifications","experience_years","duration_minutes","status","external_provider_id"):
         if k in body: setattr(d, k, body[k])
+    if "specialty_id" in body:
+        sid = body["specialty_id"]
+        if sid is not None:
+            sp = db.query(models.Specialty).filter(models.Specialty.id==sid).first()
+            if not sp: raise HTTPException(400, "Specialty not found")
+            if sp.hospital_id not in (None, d.hospital_id): raise HTTPException(400, "Specialty belongs to another hospital")
+        d.specialty_id = sid
+    if "department_id" in body:
+        did2 = body["department_id"]
+        if did2 is not None and not db.query(models.Department).filter(models.Department.id==did2, models.Department.hospital_id==d.hospital_id).first():
+            raise HTTPException(400, "Department belongs to another hospital")
+        d.department_id = did2
     for k in ("languages","consultation_types"):
         if k in body: setattr(d, k, json.dumps(body[k]))
     db.commit(); audit(db, "doctor.update", "doctor", did, d.hospital_id, u.id, body, "")
     return {"ok": True}
+
+@router.delete("/doctors/{did}")
+def delete_d(did: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    """Soft delete: deactivate doctor + login. Blocked with upcoming appointments."""
+    from datetime import datetime, timezone
+    d = db.query(models.Doctor).filter(models.Doctor.id==did).first()
+    if not d: raise HTTPException(404)
+    if u.role=="hospital_admin" and u.hospital_id!=d.hospital_id: raise HTTPException(403)
+    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
+    up = db.query(models.Appointment).filter(models.Appointment.doctor_id==did, models.Appointment.starts_at>=datetime.now(timezone.utc), models.Appointment.status.in_(["pending","confirmed","rescheduled"])).count()
+    if up: raise HTTPException(400, f"Doctor has {up} upcoming appointment(s); reschedule or cancel them first")
+    d.status = "inactive"; db.commit()
+    lu = db.query(models.User).filter(models.User.doctor_id==did).first()
+    if lu: lu.is_active = False; db.commit()
+    audit(db, "doctor.deactivate", "doctor", did, d.hospital_id, u.id, {"via": "delete"}, "")
+    return {"ok": True, "status": "inactive"}

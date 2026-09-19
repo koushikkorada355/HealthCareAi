@@ -91,6 +91,34 @@ def conns(db: Session = Depends(get_db), u=Depends(get_current_user)):
     q = _scope(q, models.HealthcareConnection, u)
     return [{"id":c.id,"hospital_id":c.hospital_id,"vendor":c.vendor,"base_url":c.base_url,"status":c.status} for c in q.limit(100).all()]
 
+@router.patch("/integrations/connections/{cid}")
+def patch_conn(cid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    """Simple health-system settings edit (own hospital). No appointment ops here."""
+    c = db.query(models.HealthcareConnection).filter(models.HealthcareConnection.id==cid).first()
+    if not c: raise HTTPException(404)
+    if u.role=="hospital_admin" and c.hospital_id!=u.hospital_id: raise HTTPException(403)
+    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
+    for k in ("vendor", "base_url", "status"):
+        if k in body: setattr(c, k, body[k])
+    db.commit(); return {"ok": True, "id": c.id, "status": c.status}
+
+@router.post("/integrations/connections/{cid}/test")
+def test_conn(cid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    """Ping the configured base_url /health and record the result as status."""
+    import httpx
+    c = db.query(models.HealthcareConnection).filter(models.HealthcareConnection.id==cid).first()
+    if not c: raise HTTPException(404)
+    if u.role=="hospital_admin" and c.hospital_id!=u.hospital_id: raise HTTPException(403)
+    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
+    ok, detail = False, ""
+    try:
+        r = httpx.get(f"{(c.base_url or '').rstrip('/')}/health", timeout=8)
+        ok = r.status_code == 200; detail = r.text[:300]
+    except Exception as e:
+        detail = str(e)[:300]
+    c.status = "active" if ok else "error"; db.commit()
+    return {"ok": ok, "status": c.status, "detail": detail}
+
 @router.get("/reconciliation")
 def recon(status: str = "", db: Session = Depends(get_db), u=Depends(get_current_user)):
     if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
@@ -120,6 +148,28 @@ def ops_events(severity: str = "", db: Session = Depends(get_db), u=Depends(get_
     q = db.query(models.OperationalEvent).order_by(models.OperationalEvent.id.desc())
     if severity: q = q.filter(models.OperationalEvent.severity==severity)
     return [{"id":e.id,"kind":e.kind,"severity":e.severity,"message":e.message,"correlation_id":e.correlation_id,"at":e.created_at.isoformat()} for e in q.limit(200).all()]
+
+@router.get("/activity")
+def activity(db: Session = Depends(get_db), u=Depends(get_current_user)):
+    """Hospital activity feed: audits + ops events for the caller's hospital.
+
+    Covers: doctor added/updated/activated, availability/calendar changes,
+    questionnaire create/update, workflow changes, integration changes, reviews.
+    """
+    if u.role not in ("platform_admin", "hospital_admin"): raise HTTPException(403)
+    hid = u.hospital_id
+    aq = db.query(models.AuditEvent).order_by(models.AuditEvent.id.desc())
+    oq = db.query(models.OperationalEvent).order_by(models.OperationalEvent.id.desc())
+    if u.role == "hospital_admin" and hid:
+        aq = aq.filter(models.AuditEvent.hospital_id == hid)
+        oq = oq.filter(models.OperationalEvent.hospital_id == hid)
+    acts = []
+    for a in aq.limit(100).all():
+        acts.append({"at": a.created_at.isoformat() if a.created_at else None, "kind": "audit", "text": f"{a.action} · {a.entity_type} #{a.entity_id or ''}".strip(), "actor": a.actor_user_id, "corr": a.correlation_id})
+    for e in oq.limit(100).all():
+        acts.append({"at": e.created_at.isoformat() if e.created_at else None, "kind": e.kind, "severity": e.severity, "text": e.message, "corr": e.correlation_id})
+    acts.sort(key=lambda x: x["at"] or "", reverse=True)
+    return acts[:120]
 
 @router.get("/analytics/overview")
 def analytics(db: Session = Depends(get_db), u=Depends(get_current_user)):

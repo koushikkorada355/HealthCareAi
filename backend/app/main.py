@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .db.base import Base
 from .db.session import engine
 from .core.config import settings
-from .api.v1 import auth, hospitals, doctors, scheduling, appointments, ai, mcp, voice, questionnaires, ops, notifications, workflows
+from .api.v1 import auth, hospitals, doctors, scheduling, appointments, ai, mcp, voice, questionnaires, reviews, ops, notifications, workflows
 
 logger = logging.getLogger("careaccess")
 
@@ -43,5 +43,5 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True
 def health():
     return {"ok": True, "service": "backend"}
 
-for r in [auth.router, hospitals.router, doctors.router, scheduling.router, appointments.router, ai.router, mcp.router, voice.router, questionnaires.router, workflows.router, notifications.router, ops.router]:
+for r in [auth.router, hospitals.router, doctors.router, scheduling.router, appointments.router, ai.router, mcp.router, voice.router, questionnaires.router, reviews.router, workflows.router, notifications.router, ops.router]:
     app.include_router(r, prefix="/api/v1")

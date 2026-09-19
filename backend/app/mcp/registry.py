@@ -54,6 +54,7 @@ async def invoke(db: Session, name: str, args: dict, *, user, conversation_id=No
 
 async def _search_hospitals(db, a, user=None, corr="", idem=""):
     from sqlalchemy import func as _func
+    from ..api.v1.reviews import hospital_review_stats
     q = db.query(models.Hospital).filter(models.Hospital.status=="approved")
     if a.get("city"): q = q.filter(models.Hospital.city.ilike(f"%{a['city']}%"))
     if a.get("q"):
@@ -62,7 +63,8 @@ async def _search_hospitals(db, a, user=None, corr="", idem=""):
     out = []
     for h in q.limit(20).all():
         dcnt = db.query(_func.count(models.Doctor.id)).filter(models.Doctor.hospital_id==h.id, models.Doctor.status=="active").scalar() or 0
-        out.append({"id":h.id,"name":h.name,"city":h.city,"address":h.address,"services":h.services,"cover_url":getattr(h,"cover_url",""),"doctor_count":dcnt,"avg_rating":0.0,"review_count":0})
+        _rc, _ra = hospital_review_stats(db, h.id)
+        out.append({"id":h.id,"name":h.name,"city":h.city,"address":h.address,"services":h.services,"cover_url":getattr(h,"cover_url",""),"doctor_count":dcnt,"avg_rating":_ra,"review_count":_rc})
     return {"hospitals": out}
 async def _search_doctors(db, a, user=None, corr="", idem=""):
     q = db.query(models.Doctor).filter(models.Doctor.status=="active")
@@ -73,14 +75,17 @@ async def _search_doctors(db, a, user=None, corr="", idem=""):
     if a.get("q"): q = q.filter(models.Doctor.name.ilike(f"%{a['q']}%"))
     ds = q.limit(20).all()
     out = []
+    from ..api.v1.reviews import doctor_review_stats
     for d in ds:
         sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
         h = db.query(models.Hospital).filter(models.Hospital.id==d.hospital_id).first()
-        out.append({"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","experience_years":d.experience_years,"rating":d.rating,"review_count":0,"avg_rating":d.rating,"photo_url":d.photo_url,"duration_minutes":d.duration_minutes})
+        _rc, _ra = doctor_review_stats(db, d.id)
+        out.append({"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","experience_years":d.experience_years,"rating":d.rating,"review_count":_rc,"avg_rating":_ra,"photo_url":d.photo_url,"duration_minutes":d.duration_minutes})
     return {"doctors": out}
 async def _get_doctor_details(db, a, user=None, corr="", idem=""):
     from sqlalchemy import func as _func
     from datetime import datetime, timezone, timedelta
+    from ..api.v1.reviews import doctor_review_stats
     did = int(a.get("doctor_id") or a.get("id") or 0)
     if a.get("name") and not did:
         d = db.query(models.Doctor).filter(models.Doctor.status=="active", models.Doctor.name.ilike(f"%{a['name']}%")).first()
@@ -91,6 +96,8 @@ async def _get_doctor_details(db, a, user=None, corr="", idem=""):
     sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
     h = db.query(models.Hospital).filter(models.Hospital.id==d.hospital_id).first()
     completed = db.query(_func.count(models.Appointment.id)).filter(models.Appointment.doctor_id==d.id, models.Appointment.status=="completed").scalar() or 0
+    _rc, _ra = doctor_review_stats(db, d.id)
+    _sum = f"★ {_ra} from {_rc} review(s)" if _rc else "No patient reviews yet — be the first after a completed visit."
     next_slots = []
     try:
         from ..scheduling.engine import compute_slots
@@ -101,9 +108,10 @@ async def _get_doctor_details(db, a, user=None, corr="", idem=""):
         next_slots = next_slots[:3]
     except Exception:
         next_slots = []
-    return {"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":0,"avg_rating":d.rating,"completed_visits":completed,"next_slots":next_slots,"reviews_summary":"No patient reviews yet — be the first after a completed visit."}
+    return {"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":_rc,"avg_rating":_ra,"completed_visits":completed,"next_slots":next_slots,"reviews_summary":_sum}
 async def _get_hospital_details(db, a, user=None, corr="", idem=""):
     from sqlalchemy import func as _func
+    from ..api.v1.reviews import hospital_review_stats
     hid = int(a.get("hospital_id") or a.get("id") or 0)
     if a.get("name") and not hid:
         h = db.query(models.Hospital).filter(models.Hospital.status=="approved", models.Hospital.name.ilike(f"%{a['name']}%")).first()
@@ -117,7 +125,9 @@ async def _get_hospital_details(db, a, user=None, corr="", idem=""):
         sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
         top.append({"id":d.id,"name":d.name,"specialty":sp.name if sp else "","rating":d.rating,"photo_url":d.photo_url})
     completed = db.query(_func.count(models.Appointment.id)).filter(models.Appointment.hospital_id==h.id, models.Appointment.status=="completed").scalar() or 0
-    return {"id":h.id,"name":h.name,"slug":h.slug,"city":h.city,"address":h.address,"phone":h.phone,"operating_hours":h.operating_hours,"services":h.services,"cover_url":getattr(h,"cover_url",""),"departments":depts,"doctor_count":len(docs),"doctors":top,"avg_rating":0.0,"review_count":0,"completed_visits":completed,"reviews_summary":"No patient reviews yet."}
+    _rc, _ra = hospital_review_stats(db, h.id)
+    _sum = f"★ {_ra} from {_rc} review(s)" if _rc else "No patient reviews yet."
+    return {"id":h.id,"name":h.name,"slug":h.slug,"city":h.city,"address":h.address,"phone":h.phone,"operating_hours":h.operating_hours,"services":h.services,"cover_url":getattr(h,"cover_url",""),"departments":depts,"doctor_count":len(docs),"doctors":top,"avg_rating":_ra,"review_count":_rc,"completed_visits":completed,"reviews_summary":_sum}
 async def _check_availability(db, a, user=None, corr="", idem=""):
     from ..scheduling.engine import compute_slots
     from datetime import datetime, timezone, timedelta
