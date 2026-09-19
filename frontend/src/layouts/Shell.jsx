@@ -29,7 +29,7 @@ const NAV = {
 }
 
 const ROLE_META = {
-  platform_admin: { label: 'Platform admin', chip: 'bg-white/15 text-white', bar: 'from-brand-ink via-brand-deep to-brand' },
+  platform_admin: { label: 'System Admin', chip: 'bg-white/15 text-white', bar: 'from-brand-ink via-brand-deep to-brand' },
   hospital_admin: { label: 'Hospital admin', chip: 'bg-brand-soft text-brand-ink', bar: 'from-brand-deep via-brand to-apricot' },
   doctor: { label: 'Doctor', chip: 'bg-mint-soft text-mint-deep', bar: 'from-mint-deep via-mint to-brand' },
   patient: { label: 'Patient', chip: 'bg-apricot-soft text-apricot-deep', bar: 'from-brand via-[#5B9BFF] to-apricot' },

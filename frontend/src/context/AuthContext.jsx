@@ -6,7 +6,6 @@ export const useAuth = () => useContext(Ctx)
 
 const DEMOS = [
   { label: 'System Admin', email: 'admin@gmail.com', password: '12345' },
-  { label: 'Platform admin', email: 'admin@platform.org' },
   { label: 'Hospital admin', email: 'admin@citycare-general.org' },
   { label: 'Doctor', email: 'doc0@example.org' },
   { label: 'Patient', email: 'aarav@example.org' },

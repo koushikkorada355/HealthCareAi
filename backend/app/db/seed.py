@@ -150,7 +150,12 @@ def _ensure_system_admin(db: Session):
         db.add(u); db.commit(); db.refresh(u)
     else:
         u.password_hash = hash_password("12345"); u.role = "platform_admin"
-        u.full_name = u.full_name or "System Admin"; u.is_active = True; db.commit()
+        u.full_name = "System Admin"; u.is_active = True; db.commit()
+    # Retired duplicate: admin@platform.org is superseded by admin@gmail.com.
+    # Deactivate (never hard-delete) to preserve audit history.
+    old = db.query(models.User).filter(models.User.email=="admin@platform.org").first()
+    if old and old.is_active:
+        old.is_active = False; db.commit()
 
 def _full_seed(db: Session):
     now = datetime.now(timezone.utc)
@@ -176,7 +181,6 @@ def _full_seed(db: Session):
             except Exception:
                 pass
         h_objs.append(h)
-    _u(db, "admin@platform.org", "platform_admin", "Platform Admin")
     doc_names = [("Dr. Maya Rao","Orthopedics",10),("Dr. James Lee","Cardiology",12),("Dr. Sara Khan","Dermatology",8),("Dr. Tom Becker","General Medicine",15),("Dr. Anita Desai","Pediatrics",9),("Dr. Chris Novak","Neurology",11)]
     for h in h_objs[:2]:
         for d in ["Orthopedics","Cardiology","General"]:

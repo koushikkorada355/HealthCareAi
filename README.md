@@ -48,10 +48,10 @@ docker compose up --build
 
 DB persists in `pgdata` volume. Backend auto-creates tables and seeds on first boot (`SEED_ON_STARTUP=true`).
 
-## Demo accounts (password `password123`)
+## Demo accounts (System Admin password `12345`, others `password123`)
 | Role | Email |
 |---|---|
-| Platform admin | admin@platform.org |
+| System Admin | admin@gmail.com |
 | Hospital admin | admin@citycare-general.org |
 | Doctor | doc0@example.org |
 | Patient | aarav@example.org |

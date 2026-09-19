@@ -1,7 +1,7 @@
 # Demo Script (5 min + failure)
 
-## Accounts (password `password123`)
-admin@platform.org · admin@citycare-general.org · doc0@example.org · aarav@example.org
+## Accounts (System Admin `admin@gmail.com` / `12345`, others password `password123`)
+admin@gmail.com · admin@citycare-general.org · doc0@example.org · aarav@example.org
 
 ## Happy path (patient)
 1. Login `aarav@example.org` → AI Assistant → send: "I need to see a doctor for my shoulder pain sometime this week."

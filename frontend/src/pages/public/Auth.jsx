@@ -69,6 +69,6 @@ export function HospitalApply() {
     ))}
     {!done ? <div className="flex gap-2"><button onClick={() => submit(true)} disabled={busy} className="btn-ghost flex-1">{busy ? 'Saving…' : 'Save draft'}</button><button onClick={() => submit(false)} disabled={busy} className="btn-primary flex-1">{busy ? 'Submitting…' : 'Submit application'}</button></div>
     : done.error ? <div className="text-sm text-crit bg-red-50 p-3 rounded-xl">{done.error}</div>
-    : <div className="text-sm bg-emerald-50 text-emerald-700 p-3 rounded-xl">{done.status === 'draft' ? 'Saved as draft.' : 'Submitted!'} Status: <b>{done.status}</b>. Track it under Platform admin → Applications.</div>}
+    : <div className="text-sm bg-emerald-50 text-emerald-700 p-3 rounded-xl">{done.status === 'draft' ? 'Saved as draft.' : 'Submitted!'} Status: <b>{done.status}</b>. Track it under System Admin → Applications.</div>}
   </div></div>
 }
