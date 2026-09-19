@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, func
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from ..db.base import Base
 from datetime import datetime
@@ -131,15 +131,16 @@ class ReconciliationRecord(Base):
 class Review(Base):
     """Patient review of a doctor or hospital after a completed visit.
 
-    One review per appointment (UNIQUE appointment_id). Hospital Admin sees
-    only their own hospital's rows; responses are the hospital's reply.
+    One review per (appointment, target): a visit can carry both a doctor
+    and a hospital review. Hospital Admin sees only their own hospital's
+    rows; responses are the hospital's reply.
     """
     __tablename__ = "reviews"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     target_type: Mapped[str] = mapped_column(String(16), index=True)  # doctor|hospital
     doctor_id: Mapped[int | None] = mapped_column(ForeignKey("doctors.id"), nullable=True, index=True)
     hospital_id: Mapped[int] = mapped_column(ForeignKey("hospitals.id"), index=True)
-    appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id"), unique=True, index=True)
+    appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id"), index=True)
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
     rating: Mapped[int] = mapped_column(Integer, default=5)  # 1..5
     title: Mapped[str] = mapped_column(String(255), default="")
@@ -148,3 +149,4 @@ class Review(Base):
     response_text: Mapped[str] = mapped_column(Text, default="")
     response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (UniqueConstraint("appointment_id", "target_type", name="reviews_appt_target_key"),)

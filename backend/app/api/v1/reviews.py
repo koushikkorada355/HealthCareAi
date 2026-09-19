@@ -38,7 +38,7 @@ def create_r(b: ReviewIn, db: Session = Depends(get_db), u=Depends(get_current_u
     if not ap: raise HTTPException(404, "Appointment not found")
     if ap.patient_id != u.patient_id: raise HTTPException(403, "Not your appointment")
     if ap.status != "completed": raise HTTPException(400, "Only completed visits can be reviewed")
-    if db.query(models.Review).filter(models.Review.appointment_id == ap.id).first(): raise HTTPException(400, "This visit is already reviewed")
+    if db.query(models.Review).filter(models.Review.appointment_id == ap.id, models.Review.target_type == b.target_type).first(): raise HTTPException(400, f"This visit already has a {b.target_type} review")
     r = models.Review(target_type=b.target_type, doctor_id=ap.doctor_id if b.target_type == "doctor" else None,
                       hospital_id=ap.hospital_id, appointment_id=ap.id, patient_id=ap.patient_id,
                       rating=b.rating, title=b.title[:255], body=b.body[:5000], status="approved")

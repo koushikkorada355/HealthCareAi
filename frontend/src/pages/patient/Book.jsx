@@ -80,36 +80,37 @@ export function BookFind() {
   return (
     <div>
       <Steps step={1} />
-      {/* intake first — the page asks about the visit BEFORE showing any doctor */}
-      <div className="hero-gradient relative overflow-hidden rounded-2xl p-6 text-white shadow-lift md:p-8">
+      {/* intake — light template: white cards over a soft banner */}
+      <div className="relative overflow-hidden rounded-2xl border border-brand/15 bg-gradient-to-br from-brand-soft via-white to-apricot-soft p-6 shadow-lift md:p-8">
         <div className="relative">
-          <div className="inline-block rounded-full bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wider backdrop-blur">✦ STEP 1 OF 2 · TELL US ABOUT YOUR VISIT</div>
-          <h1 className="font-display mt-2 text-3xl font-semibold md:text-4xl">What brings you in today?</h1>
-          <p className="mt-1 max-w-xl text-sm opacity-85">Answer a few quick questions and we will match you with the right doctors and their real availability. Nothing is booked on this page.</p>
+          <div className="inline-block rounded-full bg-brand px-3 py-1 text-[11px] font-bold tracking-wider text-white">✦ STEP 1 OF 2 · TELL US ABOUT YOUR VISIT</div>
+          <h1 className="font-display mt-2 text-3xl font-semibold text-ink md:text-4xl">What brings you in today?</h1>
+          <p className="mt-1 max-w-xl text-sm text-ink-soft">Answer a few quick questions and we will match you with the right doctors and their real availability. Nothing is booked on this page.</p>
 
-          <label htmlFor="book-problem" className="mt-4 block text-xs font-bold tracking-wide">1 · WHAT IS THE PROBLEM? *</label>
-          <textarea id="book-problem" className="input mt-1 max-w-xl !border-white/30 !bg-white/95 !text-ink" rows={2}
+          <Card className="mt-4 max-w-2xl !p-5">
+          <label htmlFor="book-problem" className="block text-xs font-bold tracking-wide">1 · WHAT IS THE PROBLEM? *</label>
+          <textarea id="book-problem" className="input mt-1" rows={2}
             placeholder='Describe it in your own words — e.g. "shoulder pain since last week"' value={problem} onChange={e => onProblem(e.target.value)} />
           <div className="mt-2 flex flex-wrap gap-2">
             {PROBLEM_CHIPS.map(c => (
               <button key={c} type="button" onClick={() => onProblem(problem.trim() ? `${problem.trim()} + ${c.toLowerCase()}` : c)}
-                className="rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold backdrop-blur transition hover:bg-white/25">+ {c}</button>
+                className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-ink transition hover:bg-brand-soft hover:text-brand-ink">+ {c}</button>
             ))}
           </div>
-          {detectSpec(problem) && <div className="mt-2 text-xs font-bold text-white/90">Looks like <span className="rounded-full bg-white px-2 py-0.5 text-brand-ink">{detectSpec(problem)}</span> — you can change it below.</div>}
+          {detectSpec(problem) && <div className="mt-2 text-xs font-bold text-ink-soft">Looks like <span className="rounded-full bg-brand px-2 py-0.5 text-white">{detectSpec(problem)}</span> — you can change it below.</div>}
 
           <div className="mt-4 text-xs font-bold tracking-wide">2 · WHICH SPECIALTY?</div>
           <div className="mt-2 flex flex-wrap gap-2">
             {SPECIALTIES.map(s => (
               <button key={s} type="button" onClick={() => pickSpec(s)}
-                className={`rounded-full px-4 py-1.5 text-xs font-bold backdrop-blur transition ${spec === s ? 'bg-white text-brand-ink shadow-lift' : 'bg-white/15 text-white hover:bg-white/25'}`}>{s}{spec === s ? ' ✓' : ''}</button>
+                className={`rounded-full px-4 py-1.5 text-xs font-bold transition ${spec === s ? 'bg-brand text-white shadow-lift' : 'bg-slate-100 text-ink-soft hover:bg-brand-soft hover:text-brand-ink'}`}>{s}{spec === s ? ' ✓' : ''}</button>
             ))}
           </div>
 
-          <div className="mt-4 grid max-w-xl gap-3 sm:grid-cols-2">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="book-hosp" className="block text-xs font-bold tracking-wide">3 · PREFERRED HOSPITAL</label>
-              <select id="book-hosp" className="input mt-1 !border-white/30 !bg-white/95 !text-ink" value={hospId} onChange={e => setHospId(e.target.value)}>
+              <select id="book-hosp" className="input mt-1" value={hospId} onChange={e => setHospId(e.target.value)}>
                 <option value="">No preference</option>
                 {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
@@ -119,16 +120,17 @@ export function BookFind() {
               <div className="mt-1 flex flex-wrap gap-1.5">
                 {DAY_OPTS.map(dy => (
                   <button key={dy} type="button" onClick={() => setDayPref(dy)}
-                    className={`rounded-full px-3 py-2 text-xs font-bold transition ${dayPref === dy ? 'bg-white text-brand-ink shadow-lift' : 'bg-white/15 text-white hover:bg-white/25'}`}>{dy}</button>
+                    className={`rounded-full px-3 py-2 text-xs font-bold transition ${dayPref === dy ? 'bg-brand text-white shadow-lift' : 'bg-slate-100 text-ink-soft hover:bg-brand-soft'}`}>{dy}</button>
                 ))}
               </div>
             </div>
           </div>
 
-          {intakeErr && <div className="mt-3 max-w-xl rounded-xl bg-red-500/20 p-2.5 text-sm font-semibold">{intakeErr}</div>}
-          <button type="button" onClick={findDoctors} className="mt-4 rounded-xl bg-white px-6 py-3 font-bold text-brand-ink shadow-lift transition hover:-translate-y-0.5">
+          {intakeErr && <div className="mt-3 max-w-xl rounded-xl bg-red-50 p-2.5 text-sm font-semibold text-red-700">{intakeErr}</div>}
+          <button type="button" onClick={findDoctors} className="btn-primary mt-4 !px-6 !py-3">
             Find matching doctors →
           </button>
+          </Card>
         </div>
       </div>
 
@@ -145,20 +147,24 @@ export function BookFind() {
         <button type="button" onClick={() => setStage('intake')} className="ml-auto font-bold text-brand-deep underline">← Change answers</button>
         <input className="input mt-1 w-full max-w-xs !py-2 text-sm" placeholder="Filter by doctor name…" value={q} onChange={e => setQ(e.target.value)} />
       </div>
-      {/* hospital strip */}
-      <div className="stagger mt-5 grid gap-3 sm:grid-cols-2">
-        {hospitals.map(h => (
-          <button key={h.id} type="button" onClick={() => setHospId(String(h.id) === hospId ? '' : String(h.id))}
-            className={`group relative h-28 overflow-hidden rounded-2xl text-left shadow-card transition hover:-translate-y-0.5 ${String(h.id) === hospId ? 'ring-4 ring-brand' : ''}`}>
-            <img src={h.cover_url || hospitalCover(h.slug)} alt={h.name} loading="lazy" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105"
-              onError={(e) => { e.currentTarget.style.display = 'none' }} />
-            <div className="absolute inset-0 bg-gradient-to-r from-brand-ink/80 via-brand-ink/40 to-transparent" />
-            <div className="absolute bottom-2.5 left-4 right-4">
-              <div className="font-display font-semibold text-white">{h.name}</div>
-              <div className="text-xs text-white/75">{h.city} · ★ {h.avg_rating ?? 0} ({h.review_count ?? 0}) {String(h.id) === hospId ? '· ✓ selected' : ''}</div>
-            </div>
+      {/* hospital strip — rating-first compact cards */}
+      <div className="mt-2 text-xs font-bold tracking-wide text-ink-soft">HOSPITALS</div>
+      <div className="stagger mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <button key="" type="button" onClick={() => setHospId('')}
+          className={`rounded-2xl border p-3 text-left shadow-card transition hover:-translate-y-0.5 ${!hospId ? 'border-brand ring-2 ring-brand/30 bg-brand-soft/40' : 'border-slate-100 bg-white'}`}>
+          <div className="font-bold text-sm">All hospitals</div><div className="text-xs text-ink-soft">Everywhere · {doctors.length} doctors</div>
+        </button>
+        {hospitals.map(h => {
+          const sel = String(h.id) === hospId
+          const n = doctors.filter(d => String(d.hospital_id) === String(h.id)).length
+          return (
+          <button key={h.id} type="button" onClick={() => setHospId(sel ? '' : String(h.id))}
+            className={`rounded-2xl border p-3 text-left shadow-card transition hover:-translate-y-0.5 ${sel ? 'border-brand ring-2 ring-brand/30 bg-brand-soft/40' : 'border-slate-100 bg-white'}`}>
+            <div className="flex items-center justify-between gap-2"><span className="font-bold text-sm truncate">{h.name}</span>{sel && <span className="text-brand-deep font-bold">✓</span>}</div>
+            <div className="text-xs text-ink-soft">{h.city}</div>
+            <div className="mt-1 text-xs"><b>★ {h.avg_rating ?? 0}</b> <span className="text-ink-soft">({h.review_count ?? 0}) · {n} doctors</span></div>
           </button>
-        ))}
+        )})}
       </div>
 
       <div className="mt-6 flex items-center justify-between">
@@ -171,17 +177,13 @@ export function BookFind() {
       ) : filtered.length ? (
         <div className="stagger mt-3 grid gap-4 md:grid-cols-2">
           {filtered.map(d => (
-            <Card key={d.id} className="card-hover !p-0 overflow-hidden">
-              <div className="relative hero-gradient px-5 pb-3 pt-4">
-                <div className="text-xs font-bold text-white/80">{d.hospital_name}{d.hospital_city ? ` · ${d.hospital_city}` : ''}</div>
-                <div className="absolute right-3 top-3"><Pill value={d.status} /></div>
-              </div>
-              <div className="flex gap-4 p-5">
-                <div className="-mt-10 shrink-0"><Avatar name={d.name} size={68} photo={d.photo_url} seed={d.id} plain={false} /></div>
+            <Card key={d.id} className="card-hover !p-5">
+              <div className="flex gap-4">
+                <Avatar name={d.name} size={72} photo={d.photo_url} seed={d.id} plain={false} />
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold leading-tight">{d.name}</div>
-                  <div className="mt-0.5 text-sm text-ink-soft">{d.specialty} · {d.experience_years}y exp</div>
-                  <div className="mt-0.5 text-sm"><b>★ {d.avg_rating ?? d.rating ?? 0}</b> <span className="text-ink-soft">({d.review_count ?? 0} reviews)</span></div>
+                  <div className="font-display text-lg font-semibold leading-tight">{d.name}</div>
+                  <div className="mt-0.5 text-sm"><b>★ {d.avg_rating ?? d.rating ?? 0}</b> <span className="text-ink-soft">({d.review_count ?? 0} reviews) · {d.specialty}</span></div>
+                  <div className="mt-0.5 text-sm text-ink-soft">{d.hospital_name}{d.hospital_city ? ` · ${d.hospital_city}` : ''}{d.experience_years ? ` · ${d.experience_years}y exp` : ''} · <Pill value={d.status} /></div>
                   <div className="mt-3 flex gap-2">
                     <button type="button" onClick={() => nav(`/app/book/${d.id}`)} className="btn-primary text-sm !px-4 !py-2">View real slots →</button>
                     <Link to={`/app/doctors/${d.id}/slots`} className="btn-ghost text-sm !px-3 !py-2">Classic view</Link>

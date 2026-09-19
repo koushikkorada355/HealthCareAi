@@ -4,7 +4,7 @@ import { api } from '../../api/client.js'
 import { Card, PageHead, Pill, Empty, Trace } from '../../components/ui.jsx'
 
 function Row({ a }) {
-  return <Link to={`/app/appointments/${a.id}`} className="flex items-center justify-between py-3 border-t border-slate-100 text-sm hover:text-teal"><span><b>{a.doctor_name}</b> · {new Date(a.starts_at).toLocaleString()} <span className="text-ink-soft">· {a.hospital_name}</span></span><Pill value={a.status} /></Link>
+  return <Link to={`/app/appointments/${a.id}`} className="flex items-center justify-between py-3 border-t border-slate-100 text-sm hover:text-teal"><span><b>{a.doctor_name}</b> · {new Date(a.starts_at).toLocaleString()} <span className="text-ink-soft">· {a.hospital_name}</span>{a.status === 'completed' && <span className="font-bold text-amber-600"> · Rate ★</span>}</span><Pill value={a.status} /></Link>
 }
 export function Upcoming() {
   const [rows, setRows] = useState([])
@@ -100,7 +100,32 @@ export function Detail() {
     </div>
     <Card className="mt-4"><div className="font-bold mb-2">Pre-visit questionnaires</div>
       {qs.length ? qs.map(r => <Link key={r.id} to={`/app/questionnaires/${r.id}`} className="flex justify-between text-sm py-2 border-t border-slate-100"><span>{r.questionnaire_title}</span><Pill value={r.status} /></Link>) : <div className="text-sm text-ink-soft">None assigned yet.</div>}</Card>
+    {a.status === 'completed' && <ReviewCard appointmentId={a.id} doctorName={a.doctor_name} />}
   </div>
+}
+function ReviewCard({ appointmentId, doctorName }) {
+  const [mine, setMine] = useState([]); const [stars, setStars] = useState(5); const [title, setTitle] = useState(''); const [body, setBody] = useState(''); const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
+  const load = () => api('/reviews').then(rs => setMine(rs.filter(r => r.appointment_id === Number(appointmentId)))).catch(() => {})
+  useEffect(load, [appointmentId])
+  const has = (t) => mine.some(r => r.target_type === t)
+  const submit = async () => {
+    setBusy(true); setMsg('')
+    const results = []
+    for (const t of ['doctor', 'hospital']) {
+      if (has(t)) { results.push(`${t}: already rated`); continue }
+      try { await api('/reviews', { method: 'POST', body: { appointment_id: Number(appointmentId), target_type: t, rating: stars, title: title.trim(), body: body.trim() } }); results.push(`${t}: saved ★${stars}`) }
+      catch (e) { results.push(`${t}: ${e.message}`) }
+    }
+    setMsg(results.join(' · ')); setBusy(false); load()
+  }
+  if (mine.length === 2) return <Card className="mt-4"><div className="font-bold mb-1">Your ratings</div>{mine.map(r => <div key={r.id} className="text-sm py-1.5 border-t border-slate-100">★ {r.rating} · {r.target_type}{r.title ? ` — ${r.title}` : ''}{r.response_text && <div className="mt-1 rounded-xl bg-slate-50 p-2 text-xs"><b>Response:</b> {r.response_text}</div>}</div>)}</Card>
+  return <Card className="mt-4"><div className="font-bold">Rate this visit</div><p className="text-sm text-ink-soft">One shared rating below counts for both {doctorName || 'the doctor'} and the hospital.</p>
+    <div className="mt-2 flex gap-1" role="radiogroup" aria-label="Stars">{[1, 2, 3, 4, 5].map(s => <button key={s} type="button" role="radio" aria-checked={stars === s} aria-label={`${s} stars`} onClick={() => setStars(s)} className={`text-2xl ${s <= stars ? 'text-amber-500' : 'text-slate-300'}`}>★</button>)}</div>
+    <input aria-label="Review title" className="input mt-2" placeholder="Title (optional)" value={title} onChange={e => setTitle(e.target.value)} />
+    <textarea aria-label="Review comment" className="input mt-2" rows={2} placeholder="What went well? What could improve?" value={body} onChange={e => setBody(e.target.value)} />
+    {(has('doctor') || has('hospital')) && <div className="mt-2 text-xs text-ink-soft">Already rated: {[has('doctor') && 'doctor', has('hospital') && 'hospital'].filter(Boolean).join(' + ')} — submitting again rates the other.</div>}
+    {msg && <div className="mt-2 text-sm">{msg}</div>}
+    <button type="button" disabled={busy} onClick={submit} className="btn-primary text-sm mt-3">{busy ? 'Saving…' : 'Submit rating ✓'}</button></Card>
 }
 export function Questionnaires() {
   const [rows, setRows] = useState([])

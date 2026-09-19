@@ -168,6 +168,16 @@ def _ensure_columns(db: Session):
         db.commit()
     except Exception:
         db.rollback()
+    # Reviews: one row per (appointment, target). Migrate old single-unique.
+    # NOTE: column unique=True historically created unique *index*
+    # ix_reviews_appointment_id (not a constraint named reviews_appointment_id_key).
+    try:
+        from sqlalchemy import text as _text
+        db.execute(_text("DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'reviews_appointment_id_key') THEN ALTER TABLE reviews DROP CONSTRAINT reviews_appointment_id_key; END IF; IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'ix_reviews_appointment_id') THEN DROP INDEX ix_reviews_appointment_id; END IF; IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'reviews_appt_target_key') THEN ALTER TABLE reviews ADD CONSTRAINT reviews_appt_target_key UNIQUE(appointment_id, target_type); END IF; END $$"))
+        db.execute(_text("CREATE INDEX IF NOT EXISTS ix_reviews_appointment_id ON reviews (appointment_id)"))
+        db.commit()
+    except Exception:
+        db.rollback()
 
 def run(db: Session):
     _ensure_columns(db)
