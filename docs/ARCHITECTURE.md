@@ -23,5 +23,21 @@ users, hospitals, departments, specialties, doctors, patients, user_context_pref
 ## Tenant model
 `users.hospital_id` binds staff; `tenant_hospital_id()` rejects cross-tenant claims; list endpoints scope by role; patients see only own rows; doctors only own appointments.
 
-## Double-booking protection
-DB unique `(doctor_id, starts_at)` + `validate_slot` re-check inside booking transaction + EHR-side conflict check + idempotency keys end-to-end (client → appointment → EHR → probe).
+## Appointment flow (statuses)
+```
+pending → confirmed → rescheduled → confirmed → completed
+   ↓          ↓            ↓              ↓           ↓
+ failed   cancelled    cancelled      cancelled   (terminal)
+   ↓          ↓
+reconciliation_required → confirmed | cancelled | failed
+```
+- `pending` is a millisecond transit state (row created, EHR write in flight) — not an approval inbox. No human approval step exists by design.
+- `confirmed` only after EHR read-back verification (`IntegrationVerification matched`).
+- Terminal: `completed`, `no_show`, `cancelled`, `failed`. Re-entry only via `failed → requested` (retry as new booking).
+- There is deliberately **no `rejected` row state**: a lost race keeps zero rows (loser rolls back). Rejection is a **coded response**, not stored data.
+
+## Concurrency: two users, one slot (no DB locks)
+Arbitration is atomic index checks at commit time — no `SELECT FOR UPDATE`, no advisory locks:
+- `UNIQUE(doctor_id, starts_at)` blocks exact-start doubles; `EXCLUDE … tstzrange && WHERE active` blocks overlapping ranges. One committer wins, the other gets `IntegrityError` → rollback → `409 SLOT_TAKEN: …`.
+- Same idempotency key → same row returned (`deduplicated`, never a second row). EHR-side 409 → also mapped to `SLOT_TAKEN`.
+- Past starts → `400 SLOT_PAST`. Frontend renders “❌ Rejected — slot just taken” + next 3 free alternatives (one-tap rebook, fresh key).

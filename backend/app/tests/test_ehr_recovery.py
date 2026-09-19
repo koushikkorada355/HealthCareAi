@@ -53,7 +53,21 @@ def test_double_booking_blocked(monkeypatch):
         asyncio.run(bk.book_appointment(db, hospital_id=h.id, doctor_id=d.id, patient_id=p.id, starts_at=s, ends_at=s + timedelta(minutes=30), calendar_id=c.id, idempotency_key="kB", corr="cB"))
         assert False, "should conflict"
     except ValueError as e:
-        assert "not available" in str(e).lower() or "conflict" in str(e).lower()
+        assert "SLOT_TAKEN" in str(e) and ("conflict" in str(e).lower() or "not available" in str(e).lower())
+
+def test_overlapping_booking_rejected_with_code(monkeypatch):
+    """Overlapping (not exact-start) second booking is rejected, no row kept."""
+    monkeypatch.setattr(bk, "EHRClient", FakeEHR)
+    db = _db(); h, d, c, p = _mk(db)
+    s = (datetime.now(timezone.utc) + timedelta(days=3)).replace(hour=14, minute=0, second=0, microsecond=0)
+    asyncio.run(bk.book_appointment(db, hospital_id=h.id, doctor_id=d.id, patient_id=p.id, starts_at=s, ends_at=s + timedelta(minutes=30), calendar_id=c.id, idempotency_key="kC", corr="cC"))
+    n_before = db.query(models.Appointment).count()
+    try:
+        asyncio.run(bk.book_appointment(db, hospital_id=h.id, doctor_id=d.id, patient_id=p.id, starts_at=s + timedelta(minutes=15), ends_at=s + timedelta(minutes=45), calendar_id=c.id, idempotency_key="kD", corr="cD"))
+        assert False, "overlap should be rejected"
+    except ValueError as e:
+        assert "SLOT_TAKEN" in str(e)
+    assert db.query(models.Appointment).count() == n_before, "loser must leave no row"
 
 def test_unknown_outcome_recovery_path():
     db = _db(); h, d, c, p = _mk(db)

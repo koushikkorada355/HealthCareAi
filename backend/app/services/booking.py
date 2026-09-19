@@ -34,14 +34,25 @@ async def book_appointment(db: Session, *, hospital_id: int, doctor_id: int, pat
         if not cal: raise ValueError("No active calendar")
         calendar_id = cal.id
     try: validate_slot(db, doctor_id, calendar_id, starts_at, ends_at)
-    except ValueError as e: raise ValueError(str(e))
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("SLOT_"):
+            raise
+        # Same slot taken between list and book (or on DBs without exclusion
+        # enforcement): label it so callers render the rejection + alternatives.
+        clash = db.query(models.Appointment).filter(models.Appointment.doctor_id==doctor_id, models.Appointment.starts_at < ends_at, models.Appointment.ends_at > starts_at, models.Appointment.status.in_(["pending","confirmed","sync_pending","rescheduled","reconciliation_required"])).first()
+        if clash:
+            raise ValueError("SLOT_TAKEN: Slot just got booked by someone else (conflict detected)")
+        raise ValueError(msg)
     appt = models.Appointment(hospital_id=hospital_id, doctor_id=doctor_id, patient_id=patient_id, calendar_id=calendar_id, appointment_type_id=appointment_type_id, starts_at=starts_at, ends_at=ends_at, status="pending", mode=mode, reason=reason[:2000], idempotency_key=idempotency_key, correlation_id=corr, integration_status="pending", conversation_id=conversation_id)
     db.add(appt)
     try: db.commit(); db.refresh(appt)
     except IntegrityError:
         db.rollback()
         conflict = db.query(models.Appointment).filter(models.Appointment.doctor_id==doctor_id, models.Appointment.starts_at < ends_at, models.Appointment.ends_at > starts_at, models.Appointment.status.in_(["pending","confirmed","sync_pending","rescheduled","reconciliation_required"])).first()
-        raise ValueError("Slot just got booked by someone else (conflict detected)")
+        # Coded rejection: no row is kept, no locks are taken — the unique and
+        # exclusion indexes arbitrated the race atomically at commit time.
+        raise ValueError("SLOT_TAKEN: Slot just got booked by someone else (conflict detected)")
     db.add(models.AppointmentHistory(appointment_id=appt.id, from_status="", to_status="pending", actor=f"user:{actor_user_id}", note="created", correlation_id=corr)); db.commit()
     # --- EHR operation ---
     op = models.IntegrationOperation(hospital_id=hospital_id, kind="create", ref_type="appointment", ref_id=appt.id, status="started", request_json=json.dumps({"doctor": doc.external_provider_id, "starts_at": starts_at.isoformat()}), idempotency_key=idempotency_key, correlation_id=corr)
@@ -68,6 +79,8 @@ async def book_appointment(db: Session, *, hospital_id: int, doctor_id: int, pat
         appt.integration_status = "failed"; db.commit()
         audit(db, "appointment.failed", "appointment", appt.id, hospital_id, actor_user_id, {"error": msg[:500]}, corr)
         ops(db, "ehr.create.failed", f"EHR create failed appt {appt.id}", "error", hospital_id, corr, {"error": msg[:500]})
+        if "409" in msg or "conflict" in msg.lower():
+            raise ValueError(f"SLOT_TAKEN: External system reports a conflict: {msg[:200]}")
         raise ValueError(f"External booking failed: {msg[:300]}")
     # --- verification (mandatory before confirm) ---
     ext_id = (created or {}).get("id") or (created or {}).get("external_id")

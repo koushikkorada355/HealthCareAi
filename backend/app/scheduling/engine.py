@@ -128,7 +128,7 @@ def is_slot_free(db: Session, doctor_id: int, calendar_id: int, starts_at: datet
 def validate_slot(db: Session, doctor_id: int, calendar_id: int, starts_at: datetime, ends_at: datetime, ignore_appointment_id=None, now: datetime | None = None):
     now = now or datetime.now(timezone.utc)
     if ends_at <= now:
-        raise ValueError("Slot is in the past")
+        raise ValueError("SLOT_PAST: Slot is in the past")
     if not is_slot_free(db, doctor_id, calendar_id, starts_at, ends_at, ignore_appointment_id, now=now):
         raise ValueError("Slot is not available (blocked/leave/booked/hours/inactive)")
     return True

@@ -32,7 +32,7 @@ async def book(b: BookIn, db: Session = Depends(get_db), u=Depends(get_current_u
     if e <= s:
         raise HTTPException(400, "ends_at must be after starts_at")
     if e <= datetime.now(timezone.utc):
-        raise HTTPException(400, "Cannot book a slot in the past")
+        raise HTTPException(400, "SLOT_PAST: Cannot book a slot in the past")
     try:
         out = await book_appointment(db, hospital_id=b.hospital_id, doctor_id=b.doctor_id, patient_id=b.patient_id, starts_at=b.starts_at, ends_at=b.ends_at, calendar_id=b.calendar_id, appointment_type_id=b.appointment_type_id, mode=b.mode, reason=b.reason, idempotency_key=b.idempotency_key, actor_user_id=u.id, simulate=b.simulate, corr=corr)
         return out

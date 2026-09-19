@@ -27,6 +27,7 @@ export default function BookConfirm() {
   const [slot, setSlot] = useState(loc.state?.slot || null)
   const [reason, setReason] = useState(''); const [mode, setMode] = useState(loc.state?.mode || sp.get('mode') || 'in_person'); const [notes, setNotes] = useState('')
   const [formErr, setFormErr] = useState(''); const [busy, setBusy] = useState(false); const [done, setDone] = useState(null); const [err, setErr] = useState(''); const [prog, setProg] = useState(-1)
+  const [rejected, setRejected] = useState(null)
 
   useEffect(() => {
     try {
@@ -41,11 +42,12 @@ export default function BookConfirm() {
     setSlot({ starts_at: sp.get('starts_at'), ends_at: sp.get('ends_at'), calendar_id: Number(sp.get('calendar_id')) })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const book = async () => {
+  const book = async (slotOverride) => {
+    const s = slotOverride || slot
     setFormErr('')
-    if (!slot) { setFormErr('No slot selected — go back and pick one.'); return }
+    if (!s) { setFormErr('No slot selected — go back and pick one.'); return }
     if (!reason.trim()) { setFormErr('Please tell us the reason for your visit — it helps the doctor prepare.'); return }
-    setBusy(true); setErr(''); setDone(null); setProg(0)
+    setBusy(true); setErr(''); setDone(null); setRejected(null); setProg(0)
     const tick = setInterval(() => setProg(p => (p < CHAIN.length - 1 ? p + 1 : p)), 450)
     try {
       const u = me || await api('/auth/me')
@@ -56,13 +58,27 @@ export default function BookConfirm() {
         method: 'POST',
         body: {
           hospital_id: doc.hospital_id, doctor_id: doc.id, patient_id: u.patient_id,
-          starts_at: slot.starts_at, ends_at: slot.ends_at, calendar_id: slot.calendar_id,
+          starts_at: s.starts_at, ends_at: s.ends_at, calendar_id: s.calendar_id,
           mode, reason: fullReason,
-          idempotency_key: `book2page-${u.id}-${doc.id}-${slot.starts_at}-${Date.now().toString(36)}`,
+          idempotency_key: `book2page-${u.id}-${doc.id}-${s.starts_at}-${Date.now().toString(36)}`,
         },
       })
       setProg(CHAIN.length - 1); setDone(r)
-    } catch (e) { setErr(e.message); setProg(-1) }
+    } catch (e) {
+      const m = e.message || ''
+      if (m.startsWith('SLOT_TAKEN:')) {
+        // Lost the race: no row was kept, nothing to clean up. Offer next slots.
+        setProg(-1)
+        try {
+          const av = await api(`/availability?doctor_id=${doc.id}&days_ahead=14`)
+          const alts = (av?.slots || []).filter(x => x.starts_at > s.starts_at).slice(0, 3)
+          setRejected({ taken: s, alternatives: alts })
+        } catch { setRejected({ taken: s, alternatives: [] }) }
+        setErr('')
+      } else if (m.startsWith('SLOT_PAST:')) {
+        setErr('That slot is in the past and can no longer be booked — pick a future time.'); setProg(-1)
+      } else { setErr(m); setProg(-1) }
+    }
     finally { clearInterval(tick); setBusy(false) }
   }
 
@@ -111,8 +127,15 @@ export default function BookConfirm() {
           <div className="mt-2 flex flex-wrap items-center gap-1.5">{CHAIN.map((c, i) => <span key={c} className={`rounded-full px-3 py-1 text-xs font-bold ${prog >= i ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-ink-soft'}`}>{prog >= i ? '● ' : '○ '}{c}</span>)}</div>
         </div>
         {formErr && <div className="mt-3 rounded-xl bg-red-50 p-2.5 text-sm text-red-700">{formErr}</div>}
+        {rejected && <div className="mt-3 animate-pop-in rounded-xl border border-red-200 bg-red-50 p-4 text-sm">
+          <div className="font-display text-lg font-semibold text-red-800">❌ Rejected — this slot was just taken</div>
+          <div className="mt-1 text-red-900">Another patient confirmed {rejected.taken ? fmtSlot(rejected.taken) : 'this time'} a moment ago. Nothing was booked for you and no duplicate exists — pick one of the next free slots:</div>
+          {rejected.alternatives?.length ? <div className="mt-3 grid gap-2 sm:grid-cols-3">{rejected.alternatives.map(a => <button key={`${a.calendar_id}-${a.starts_at}`} type="button" disabled={busy} onClick={() => { setSlot(a); book(a) }} className="rounded-xl border border-red-200 bg-white p-3 text-left hover:border-brand"><div className="font-bold">{new Date(a.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div><div className="text-xs text-ink-soft">{new Date(a.starts_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</div><div className="mt-1 text-xs font-bold text-brand-deep">Book this instead →</div></button>)}</div>
+          : <div className="mt-2 text-sm text-red-900">No later slots in the next 14 days — try another doctor.</div>}
+          <Link to={`/app/book/${id}`} className="btn-ghost text-sm mt-3 inline-block">← Back to all slots</Link>
+        </div>}
         {err && <div className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">Booking failed safely — no duplicate created: {err}</div>}
-        <button type="button" onClick={book} disabled={busy} className="btn-accent mt-3 text-sm">{busy ? 'Verifying with health system…' : 'Confirm booking ✓'}</button>
+        <button type="button" onClick={() => book()} disabled={busy} className="btn-accent mt-3 text-sm">{busy ? 'Verifying with health system…' : 'Confirm booking ✓'}</button>
       </Card>
     )}
   </div>
