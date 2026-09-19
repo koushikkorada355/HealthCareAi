@@ -89,7 +89,6 @@ export default function Shell({ children }) {
           {/* desktop breadcrumb bar */}
           <div className="sticky top-0 z-10 hidden items-center gap-2 border-b border-slate-100 bg-white/70 px-7 py-2.5 text-xs text-ink-faint backdrop-blur md:flex">
             <span>MediConnect</span><span>/</span><span className="font-bold text-ink">{crumb}</span>
-            <span className="ml-auto rounded-full bg-mint-soft px-2.5 py-0.5 font-bold text-mint-deep">EHR verified bookings</span>
           </div>
           <main key={loc.pathname} className="mx-auto max-w-6xl animate-fade-up p-4 md:p-7">{children}</main>
         </div>
