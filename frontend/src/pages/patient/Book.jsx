@@ -77,6 +77,16 @@ export function BookFind() {
     return true
   }), [doctors, spec, hospId, q])
 
+  // relevance: per-hospital counts among specialty-matching doctors (problem-typed),
+  // ignoring the hospital/name picks so the strip reacts to the problem text.
+  const specDocs = useMemo(() => doctors.filter(d => spec === 'All' || d.specialty === spec), [doctors, spec])
+  const matchCount = useMemo(() => {
+    const m = {}
+    specDocs.forEach(d => { const k = String(d.hospital_id); m[k] = (m[k] || 0) + 1 })
+    return m
+  }, [specDocs])
+  const orderedHospitals = useMemo(() => [...hospitals].sort((a, b) => (matchCount[String(b.id)] || 0) - (matchCount[String(a.id)] || 0)), [hospitals, matchCount])
+
   return (
     <div>
       <Steps step={1} />
@@ -112,7 +122,7 @@ export function BookFind() {
               <label htmlFor="book-hosp" className="block text-xs font-bold tracking-wide">3 · PREFERRED HOSPITAL</label>
               <select id="book-hosp" className="input mt-1" value={hospId} onChange={e => setHospId(e.target.value)}>
                 <option value="">No preference</option>
-                {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                {orderedHospitals.map(h => <option key={h.id} value={h.id}>{h.name}{spec !== 'All' ? ` (${matchCount[String(h.id)] || 0})` : ''}</option>)}
               </select>
             </div>
             <div>
@@ -147,22 +157,23 @@ export function BookFind() {
         <button type="button" onClick={() => setStage('intake')} className="ml-auto font-bold text-brand-deep underline">← Change answers</button>
         <input className="input mt-1 w-full max-w-xs !py-2 text-sm" placeholder="Filter by doctor name…" value={q} onChange={e => setQ(e.target.value)} />
       </div>
-      {/* hospital strip — rating-first compact cards */}
-      <div className="mt-2 text-xs font-bold tracking-wide text-ink-soft">HOSPITALS</div>
+      {/* hospital strip — rating-first compact cards, ordered by specialty match */}
+      <div className="mt-2 text-xs font-bold tracking-wide text-ink-soft">HOSPITALS{spec !== 'All' && ` · MATCHING “${spec.toUpperCase()}”`}</div>
       <div className="stagger mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <button key="" type="button" onClick={() => setHospId('')}
           className={`rounded-2xl border p-3 text-left shadow-card transition hover:-translate-y-0.5 ${!hospId ? 'border-brand ring-2 ring-brand/30 bg-brand-soft/40' : 'border-slate-100 bg-white'}`}>
-          <div className="font-bold text-sm">All hospitals</div><div className="text-xs text-ink-soft">Everywhere · {doctors.length} doctors</div>
+          <div className="font-bold text-sm">All hospitals</div><div className="text-xs text-ink-soft">Everywhere · {specDocs.length} matching doctor{specDocs.length === 1 ? '' : 's'}</div>
         </button>
-        {hospitals.map(h => {
+        {orderedHospitals.map(h => {
+          const n = matchCount[String(h.id)] || 0
           const sel = String(h.id) === hospId
-          const n = doctors.filter(d => String(d.hospital_id) === String(h.id)).length
+          const dim = spec !== 'All' && n === 0
           return (
           <button key={h.id} type="button" onClick={() => setHospId(sel ? '' : String(h.id))}
-            className={`rounded-2xl border p-3 text-left shadow-card transition hover:-translate-y-0.5 ${sel ? 'border-brand ring-2 ring-brand/30 bg-brand-soft/40' : 'border-slate-100 bg-white'}`}>
-            <div className="flex items-center justify-between gap-2"><span className="font-bold text-sm truncate">{h.name}</span>{sel && <span className="text-brand-deep font-bold">✓</span>}</div>
+            className={`rounded-2xl border p-3 text-left shadow-card transition hover:-translate-y-0.5 ${sel ? 'border-brand ring-2 ring-brand/30 bg-brand-soft/40' : 'border-slate-100 bg-white'} ${dim ? 'opacity-50' : ''}`}>
+            <div className="flex items-center justify-between gap-2"><span className="font-bold text-sm truncate">{h.name}</span>{sel ? <span className="text-brand-deep font-bold">✓</span> : dim ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">No match</span> : null}</div>
             <div className="text-xs text-ink-soft">{h.city}</div>
-            <div className="mt-1 text-xs"><b>★ {h.avg_rating ?? 0}</b> <span className="text-ink-soft">({h.review_count ?? 0}) · {n} doctors</span></div>
+            <div className="mt-1 text-xs"><b>★ {h.avg_rating ?? 0}</b> <span className="text-ink-soft">({h.review_count ?? 0}) · {spec !== 'All' ? `${n} ${spec} doctor${n === 1 ? '' : 's'}` : `${n} doctors`}</span></div>
           </button>
         )})}
       </div>
@@ -193,7 +204,7 @@ export function BookFind() {
             </Card>
           ))}
         </div>
-      ) : <Card className="mt-3"><Empty title="No doctors match" sub="Go back and change your answers, or clear the name filter." /></Card>}
+      ) : <Card className="mt-3"><Empty title="No doctors match" sub={hospId && spec !== 'All' ? `No ${spec} doctors at the selected hospital — clear it or pick another specialty.` : 'Go back and change your answers, or clear the name filter.'} />{hospId && spec !== 'All' && <button type="button" onClick={() => setHospId('')} className="btn-ghost text-sm mt-3">Clear hospital filter</button>}</Card>}
       </div>
       )}
     </div>
