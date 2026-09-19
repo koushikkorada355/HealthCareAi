@@ -48,12 +48,22 @@ def topup(db: Session):
         if not d.photo_url:
             d.photo_url = DOCTOR_PHOTOS[i % len(DOCTOR_PHOTOS)]
     # Backfill hospital covers (auto-Unsplash, no prompt). Skip if column missing on old DBs.
+    # DDL first (see _ensure_columns, also run at the top of run()): never let
+    # a missing column poison this session — each step rolls back separately.
+    _ensure_columns(db)
     try:
         for h in db.query(models.Hospital).all():
             if not getattr(h, "cover_url", None):
                 h.cover_url = hospital_cover_for(h.slug)
     except Exception:
-        pass
+        db.rollback()
+    # Backfill demo coordinates for known slugs missing them.
+    try:
+        for h in db.query(models.Hospital).all():
+            if getattr(h, "latitude", None) is None and h.slug in DEMO_COORDS:
+                h.latitude, h.longitude = DEMO_COORDS[h.slug]
+    except Exception:
+        db.rollback()
     db.commit()
     now = datetime.now(timezone.utc)
     pats = db.query(models.Patient).order_by(models.Patient.id).all()
@@ -98,6 +108,19 @@ DEMO_APPLICATIONS = [
     ("Harborview Medical Center", "harborview-medical", "suspended", "77 Harbor Rd, Lakeside", "Lakeside", "Suspended pending license re-verification."),
 ]
 
+# Hand-picked demo coordinates (fake cities — replace with real pins at
+# production onboarding via the Hospital profile Location tab).
+DEMO_COORDS = {
+    "citycare-general": (39.7817, -89.6501),
+    "riverside-specialty": (39.7680, -89.6400),
+    "northgate-community": (40.1100, -88.2300),
+    "greenvalley-medical": (39.7900, -89.6600),
+    "lakeside-health": (41.8800, -87.6300),
+    "sunrise-rural": (40.1200, -88.2400),
+    "metro-surgical": (39.7750, -89.6450),
+    "harborview-medical": (41.8700, -87.6200),
+}
+
 def _seed_demo_applications(db: Session):
     """Demo review queue: one application per lifecycle status (idempotent).
 
@@ -107,8 +130,10 @@ def _seed_demo_applications(db: Session):
     for name, slug, status, addr, city, note in DEMO_APPLICATIONS:
         if db.query(models.Hospital).filter(models.Hospital.slug == slug).first():
             continue
+        lat, lng = DEMO_COORDS.get(slug, (None, None))
         h = models.Hospital(
             name=name, slug=slug, status=status, address=addr, city=city,
+            latitude=lat, longitude=lng,
             phone="+1-555-0142", contact_email=f"admin@{slug}.org",
             operating_hours=json.dumps({"mon": [["09:00", "17:00"]], "tue": [["09:00", "17:00"]], "wed": [["09:00", "17:00"]], "thu": [["09:00", "17:00"]], "fri": [["09:00", "15:00"]]}),
             services=json.dumps(["outpatient", "lab"]), ehr_vendor="mock",
@@ -128,7 +153,22 @@ def _seed_demo_applications(db: Session):
             action = {"under_review": "hospital.under_review", "corrections_requested": "hospital.corrections", "rejected": "hospital.reject", "suspended": "hospital.suspend"}.get(status, f"hospital.{status}")
             db.add(models.AuditEvent(actor_user_id=None, action=action, entity_type="hospital", entity_id=h.id, hospital_id=h.id, detail=json.dumps({"note": note}), correlation_id=f"demo-{slug}")); db.commit()
 
+def _ensure_columns(db: Session):
+    """Idempotent DDL for columns create_all() can't add to existing tables.
+
+    MUST run before any ORM query on those tables: a missing column makes
+    even a COUNT fail and would poison the session for everything after.
+    """
+    try:
+        from sqlalchemy import text as _text
+        db.execute(_text("ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION"))
+        db.execute(_text("ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION"))
+        db.commit()
+    except Exception:
+        db.rollback()
+
 def run(db: Session):
+    _ensure_columns(db)
     if db.query(models.Hospital).count() < 3 or db.query(models.Doctor).count() < 6:
         _full_seed(db)
     else:
@@ -172,8 +212,9 @@ def _full_seed(db: Session):
     for name, slug, status, addr, city in hospitals:
         h = db.query(models.Hospital).filter(models.Hospital.slug==slug).first()
         hours = json.dumps({"mon":[["09:00","17:00"]],"tue":[["09:00","17:00"]],"wed":[["09:00","17:00"]],"thu":[["09:00","17:00"]],"fri":[["09:00","15:00"]]})
+        lat, lng = DEMO_COORDS.get(slug, (None, None))
         if not h:
-            h = models.Hospital(name=name, slug=slug, status=status, address=addr, city=city, phone="+1-555-0100", contact_email=f"admin@{slug}.org", operating_hours=hours, services=json.dumps(["outpatient","imaging","lab"]), ehr_vendor="mock", cover_url=hospital_cover_for(slug), external_facility_id=f"ext-fac-{slug}")
+            h = models.Hospital(name=name, slug=slug, status=status, address=addr, city=city, latitude=lat, longitude=lng, phone="+1-555-0100", contact_email=f"admin@{slug}.org", operating_hours=hours, services=json.dumps(["outpatient","imaging","lab"]), ehr_vendor="mock", cover_url=hospital_cover_for(slug), external_facility_id=f"ext-fac-{slug}")
             db.add(h); db.commit(); db.refresh(h)
         elif not getattr(h, "cover_url", None):
             try:

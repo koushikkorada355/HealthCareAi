@@ -61,7 +61,7 @@ def list_h(db: Session = Depends(get_db), u=Depends(get_current_user), status: s
     for h in query.limit(100).all():
         dcnt = db.query(_func.count(models.Doctor.id)).filter(models.Doctor.hospital_id==h.id, models.Doctor.status=="active").scalar() or 0
         _rc, _ra = hospital_review_stats(db, h.id)
-        out.append({"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"city":h.city,"address":h.address,"phone":h.phone,"contact_email":h.contact_email,"services":h.services,"operating_hours":h.operating_hours,"ehr_vendor":h.ehr_vendor,"cover_url":h.cover_url,"doctor_count":dcnt,"avg_rating":_ra,"review_count":_rc,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes})
+        out.append({"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"city":h.city,"address":h.address,"latitude":h.latitude,"longitude":h.longitude,"phone":h.phone,"contact_email":h.contact_email,"services":h.services,"operating_hours":h.operating_hours,"ehr_vendor":h.ehr_vendor,"cover_url":h.cover_url,"doctor_count":dcnt,"avg_rating":_ra,"review_count":_rc,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes})
     return out
 
 @router.get("/hospitals/{hid}")
@@ -82,7 +82,7 @@ def get_h(hid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
     specs = [{"id":s.id,"name":s.name} for s in db.query(models.Specialty).filter((models.Specialty.hospital_id==hid)|(models.Specialty.hospital_id==None)).all()]
     from .reviews import hospital_review_stats
     _rc, _ra = hospital_review_stats(db, hid)
-    return {"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"address":h.address,"city":h.city,"phone":h.phone,"contact_email":h.contact_email,"operating_hours":h.operating_hours,"services":h.services,"ehr_vendor":h.ehr_vendor,"ehr_config":h.ehr_config,"cover_url":h.cover_url,"departments":depts,"specialties":specs,"doctor_count":len(docs),"doctors":doc_list,"admins":admins,"connections":conns,"avg_rating":_ra,"review_count":_rc,"completed_visits":db.query(_func.count(models.Appointment.id)).filter(models.Appointment.hospital_id==hid, models.Appointment.status=="completed").scalar() or 0,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes,"external_facility_id":h.external_facility_id}
+    return {"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"address":h.address,"city":h.city,"latitude":h.latitude,"longitude":h.longitude,"phone":h.phone,"contact_email":h.contact_email,"operating_hours":h.operating_hours,"services":h.services,"ehr_vendor":h.ehr_vendor,"ehr_config":h.ehr_config,"cover_url":h.cover_url,"departments":depts,"specialties":specs,"doctor_count":len(docs),"doctors":doc_list,"admins":admins,"connections":conns,"avg_rating":_ra,"review_count":_rc,"completed_visits":db.query(_func.count(models.Appointment.id)).filter(models.Appointment.hospital_id==hid, models.Appointment.status=="completed").scalar() or 0,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes,"external_facility_id":h.external_facility_id}
 
 @router.post("/hospitals/{hid}/submit")
 def resubmit(hid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -114,6 +114,16 @@ def patch_h(hid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_c
     if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
     for k in ("name","address","city","phone","contact_email","operating_hours","services","ehr_vendor","ehr_config"):
         if k in body: setattr(h, k, json.dumps(body[k]) if isinstance(body[k],(dict,list)) else body[k])
+    for k in ("latitude", "longitude"):
+        if k in body:
+            if body[k] is None or body[k] == "":
+                setattr(h, k, None)
+            else:
+                try: v = float(body[k])
+                except (TypeError, ValueError): raise HTTPException(400, f"{k} must be a number")
+                lo, hi = (-90, 90) if k == "latitude" else (-180, 180)
+                if not (lo <= v <= hi): raise HTTPException(400, f"{k} out of range")
+                setattr(h, k, v)
     db.commit()
     audit(db, "hospital.update", "hospital", hid, hid, u.id, body, "")
     return {"ok": True}

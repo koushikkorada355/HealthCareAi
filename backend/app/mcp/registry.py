@@ -64,7 +64,7 @@ async def _search_hospitals(db, a, user=None, corr="", idem=""):
     for h in q.limit(20).all():
         dcnt = db.query(_func.count(models.Doctor.id)).filter(models.Doctor.hospital_id==h.id, models.Doctor.status=="active").scalar() or 0
         _rc, _ra = hospital_review_stats(db, h.id)
-        out.append({"id":h.id,"name":h.name,"city":h.city,"address":h.address,"services":h.services,"cover_url":getattr(h,"cover_url",""),"doctor_count":dcnt,"avg_rating":_ra,"review_count":_rc})
+        out.append({"id":h.id,"name":h.name,"city":h.city,"address":h.address,"latitude":getattr(h,"latitude",None),"longitude":getattr(h,"longitude",None),"services":h.services,"cover_url":getattr(h,"cover_url",""),"doctor_count":dcnt,"avg_rating":_ra,"review_count":_rc})
     return {"hospitals": out}
 async def _search_doctors(db, a, user=None, corr="", idem=""):
     q = db.query(models.Doctor).filter(models.Doctor.status=="active")
@@ -127,7 +127,7 @@ async def _get_hospital_details(db, a, user=None, corr="", idem=""):
     completed = db.query(_func.count(models.Appointment.id)).filter(models.Appointment.hospital_id==h.id, models.Appointment.status=="completed").scalar() or 0
     _rc, _ra = hospital_review_stats(db, h.id)
     _sum = f"★ {_ra} from {_rc} review(s)" if _rc else "No patient reviews yet."
-    return {"id":h.id,"name":h.name,"slug":h.slug,"city":h.city,"address":h.address,"phone":h.phone,"operating_hours":h.operating_hours,"services":h.services,"cover_url":getattr(h,"cover_url",""),"departments":depts,"doctor_count":len(docs),"doctors":top,"avg_rating":_ra,"review_count":_rc,"completed_visits":completed,"reviews_summary":_sum}
+    return {"id":h.id,"name":h.name,"slug":h.slug,"city":h.city,"address":h.address,"latitude":getattr(h,"latitude",None),"longitude":getattr(h,"longitude",None),"phone":h.phone,"operating_hours":h.operating_hours,"services":h.services,"cover_url":getattr(h,"cover_url",""),"departments":depts,"doctor_count":len(docs),"doctors":top,"avg_rating":_ra,"review_count":_rc,"completed_visits":completed,"reviews_summary":_sum}
 async def _check_availability(db, a, user=None, corr="", idem=""):
     from ..scheduling.engine import compute_slots
     from datetime import datetime, timezone, timedelta

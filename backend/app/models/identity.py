@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, Date, func
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, Date, Float, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..db.base import Base
 from datetime import datetime
@@ -25,6 +25,8 @@ class Hospital(Base):
     status: Mapped[str] = mapped_column(String(32), default="draft", index=True)  # draft|submitted|under_review|approved|rejected|suspended|corrections_requested
     address: Mapped[str] = mapped_column(Text, default="")
     city: Mapped[str] = mapped_column(String(128), default="")
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     phone: Mapped[str] = mapped_column(String(64), default="")
     contact_email: Mapped[str] = mapped_column(String(255), default="")
     operating_hours: Mapped[str] = mapped_column(Text, default="{}")

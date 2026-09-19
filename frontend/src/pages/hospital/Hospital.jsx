@@ -16,9 +16,10 @@ export function Profile() {
   const [newDept, setNewDept] = useState(''); const [newSpec, setNewSpec] = useState('')
   const [services, setServices] = useState([]); const [svcIn, setSvcIn] = useState('')
   const [hours, setHours] = useState({})
+  const [lat, setLat] = useState(''); const [lng, setLng] = useState('')
   const load = () => {
     if (!hid) return
-    api(`/hospitals/${hid}`).then(r => { setH(r); setF({ name: r.name || '', address: r.address || '', city: r.city || '', phone: r.phone || '', contact_email: r.contact_email || '' }); try { setServices(JSON.parse(r.services || '[]')) } catch { setServices([]) }; try { setHours(JSON.parse(r.operating_hours || '{}')) } catch { setHours({}) } }).catch(() => setMsg('Could not load hospital profile.'))
+    api(`/hospitals/${hid}`).then(r => { setH(r); setF({ name: r.name || '', address: r.address || '', city: r.city || '', phone: r.phone || '', contact_email: r.contact_email || '' }); try { setServices(JSON.parse(r.services || '[]')) } catch { setServices([]) }; try { setHours(JSON.parse(r.operating_hours || '{}')) } catch { setHours({}) }; setLat(r.latitude ?? ''); setLng(r.longitude ?? '') }).catch(() => setMsg('Could not load hospital profile.'))
     api(`/hospitals/${hid}/departments`).then(setDepts).catch(() => {})
     api(`/hospitals/${hid}/specialties`).then(setSpecs).catch(() => {})
   }
@@ -28,7 +29,7 @@ export function Profile() {
     try { await api(`/hospitals/${hid}`, { method: 'PATCH', body }); setMsg(okMsg); load() }
     catch (e) { setMsg(`Could not save: ${e.message}`) } finally { setBusy(false) }
   }
-  const TABS = [['profile', 'Profile'], ['departments', 'Departments'], ['specialties', 'Specialties'], ['services', 'Services'], ['hours', 'Hours']]
+  const TABS = [['profile', 'Profile'], ['departments', 'Departments'], ['specialties', 'Specialties'], ['services', 'Services'], ['hours', 'Hours'], ['location', 'Location']]
   return <div><PageHead title="Hospital" sub="Profile, departments, specialties, services and hours — photo stays automatic." />
     {msg && <div className="card p-3 mb-3 text-sm">{msg}</div>}
     <div className="flex flex-wrap gap-2 mb-4">{TABS.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={tab === k ? 'btn-primary text-sm' : 'btn-ghost text-sm'}>{l}</button>)}</div>
@@ -37,6 +38,7 @@ export function Profile() {
     {tab === 'specialties' && <Card><div className="font-bold mb-2">Specialties ({specs.length})</div>{specs.filter(s => s.hospital_id).map(s => <SpecRow key={s.id} s={s} hid={hid} reload={load} setMsg={setMsg} />)}{!specs.filter(s => s.hospital_id).length && <div className="text-sm text-ink-soft">No hospital specialties yet — global ones still apply.</div>}<div className="flex gap-2 mt-3"><input className="input" placeholder="New specialty, e.g. Oncology" value={newSpec} onChange={e => setNewSpec(e.target.value)} /><button type="button" className="btn-primary text-sm shrink-0" onClick={async () => { if (!newSpec.trim()) return; try { await api(`/hospitals/${hid}/specialties`, { method: 'POST', body: { name: newSpec.trim() } }); setNewSpec(''); setMsg('Specialty added.'); load() } catch (e) { setMsg(`Could not add: ${e.message}`) } }}>Add</button></div></Card>}
     {tab === 'services' && <Card><div className="font-bold mb-2">Services</div><div className="flex flex-wrap gap-2 mb-3">{services.map(s => <span key={s} className="pill bg-brand-soft text-brand-ink">{s} <button type="button" aria-label={`Remove ${s}`} className="ml-1 font-bold" onClick={() => setServices(services.filter(x => x !== s))}>×</button></span>)}{!services.length && <span className="text-sm text-ink-soft">No services listed.</span>}</div><div className="flex gap-2"><input className="input" placeholder="Add service, e.g. pharmacy" value={svcIn} onChange={e => setSvcIn(e.target.value)} /><button type="button" className="btn-ghost text-sm shrink-0" onClick={() => { if (svcIn.trim() && !services.includes(svcIn.trim())) setServices([...services, svcIn.trim()]); setSvcIn('') }}>Add</button><button type="button" disabled={busy} onClick={() => save({ services }, 'Services saved.')} className="btn-primary text-sm shrink-0">Save</button></div></Card>}
     {tab === 'hours' && <Card><div className="font-bold mb-2">Operating hours</div>{DAYS.map(([k, l]) => { const win = (hours[k] || [])[0] || []; return <div key={k} className="flex items-center gap-2 text-sm py-1.5 border-t border-slate-100"><span className="w-24 font-semibold">{l}</span><input aria-label={`${l} opens`} className="input !w-28" type="time" value={win[0] || ''} onChange={e => setHours({ ...hours, [k]: e.target.value ? [[e.target.value, win[1] || '17:00']] : [] })} /><span>–</span><input aria-label={`${l} closes`} className="input !w-28" type="time" value={win[1] || ''} onChange={e => setHours({ ...hours, [k]: [[win[0] || '09:00', e.target.value]] })} /><button type="button" className="btn-ghost text-xs" onClick={() => setHours({ ...hours, [k]: [] })}>Closed</button></div> })}<button type="button" disabled={busy} onClick={() => save({ operating_hours: hours }, 'Hours saved.')} className="btn-primary text-sm mt-3">Save hours</button></Card>}
+    {tab === 'location' && <Card><div className="font-bold mb-2">Location (manual pin)</div><p className="text-sm text-ink-soft mb-3">Type the coordinates — editable anytime. Used later for “near me” sorting. No map needed.</p><div className="grid md:grid-cols-2 gap-3"><div><label className="text-xs font-bold">LATITUDE (-90…90)</label><input aria-label="Latitude" className="input mt-1" inputMode="decimal" placeholder="e.g. 39.7817" value={lat} onChange={e => setLat(e.target.value)} /></div><div><label className="text-xs font-bold">LONGITUDE (-180…180)</label><input aria-label="Longitude" className="input mt-1" inputMode="decimal" placeholder="e.g. -89.6501" value={lng} onChange={e => setLng(e.target.value)} /></div></div><div className="flex gap-2 mt-3"><button type="button" disabled={busy} onClick={() => save({ latitude: lat === '' ? null : Number(lat), longitude: lng === '' ? null : Number(lng) }, 'Location saved.')} className="btn-primary text-sm">Save location</button><button type="button" className="btn-ghost text-sm" onClick={() => save({ latitude: null, longitude: null }, 'Location cleared.')}>Clear</button></div></Card>}
   </div>
 }
 
@@ -67,6 +69,7 @@ export function Dash() {
     ]).then(([h, depts, specs, docs, qs, wfs, conns, rev]) => {
       setReady([
         ['Profile complete', !!(h?.address && h?.city && h?.phone), h ? `${h.city} · ${h.phone}` : ''],
+        ['Location set', h?.latitude != null && h?.longitude != null, (h?.latitude != null) ? `${h.latitude}, ${h.longitude}` : 'add in Hospital → Location'],
         ['Departments', depts.length > 0, `${depts.length}`],
         ['Specialties', specs.length > 0, `${specs.length}`],
         ['Active doctors', docs.length > 0, `${docs.length}`],
