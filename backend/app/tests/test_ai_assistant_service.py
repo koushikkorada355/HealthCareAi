@@ -74,3 +74,33 @@ def test_service_conversation_continuity_and_pending_roundtrip():
     t2 = asyncio.run(run_turn(db, u, {"message": "appointment #7", "conversation_id": t1["conversation_id"]}))
     assert t2["conversation_id"] == t1["conversation_id"]
     assert db.query(models.AIMessage).filter(models.AIMessage.conversation_id == t1["conversation_id"]).count() == 4
+
+
+def test_followup_resolves_against_prior_turn():
+    db = _db(); u = _user(db)
+    t1 = asyncio.run(run_turn(db, u, {"message": "I need to see a doctor for shoulder pain this week"}))
+    assert t1["intent"] == "book"
+    t2 = asyncio.run(run_turn(db, u, {"message": "Actually, make that Friday.", "conversation_id": t1["conversation_id"]}))
+    assert t2["intent"] == "book", t2
+    assert t2["conversation_id"] == t1["conversation_id"]
+
+
+def test_book_answer_carries_real_slots():
+    import json as _json
+    from datetime import datetime, timedelta, timezone
+
+    db = _db(); u = _user(db)
+    h = models.Hospital(name="H", slug="h99", status="approved"); db.add(h); db.commit()
+    sp = models.Specialty(hospital_id=h.id, name="Orthopedics"); db.add(sp); db.commit()
+    d = models.Doctor(hospital_id=h.id, specialty_id=sp.id, name="Dr Slot", status="active", duration_minutes=30)
+    db.add(d); db.commit()
+    c = models.Calendar(hospital_id=h.id, doctor_id=d.id, name="M", is_active=True,
+                        working_hours=_json.dumps({"mon": [["00:00", "23:59"]], "tue": [["00:00", "23:59"]],
+                                                   "wed": [["00:00", "23:59"]], "thu": [["00:00", "23:59"]],
+                                                   "fri": [["00:00", "23:59"]], "sat": [["00:00", "23:59"]],
+                                                   "sun": [["00:00", "23:59"]]}))
+    db.add(c); db.commit()
+    out = asyncio.run(run_turn(db, u, {"message": "shoulder pain, need orthopedics booking"}))
+    assert out["intent"] == "book"
+    assert out["data"].get("slots"), out["data"].keys()
+    assert "Earliest real availability" in out["reply"]

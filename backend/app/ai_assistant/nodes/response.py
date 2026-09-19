@@ -153,7 +153,10 @@ def _render_verified(tool: str, data: dict) -> str:
         docs = data.get("doctors") or []
         if not docs:
             return "I couldn't find an active doctor matching that right now. Want to try another specialty or hospital?"
-        lines = [f"**{d.get('name')}** ({d.get('specialty') or 'care'})" for d in docs[:5]]
+        lines = []
+        for d in docs[:5]:
+            hosp = d.get("hospital_name", "")
+            lines.append(f"**{d.get('name')}** ({d.get('specialty') or 'care'}){f' — {hosp}' if hosp else ''}")
         return "Here are real options:\n" + "\n".join("• " + l for l in lines)
     if tool == "search_hospitals":
         hs = data.get("hospitals") or []

@@ -24,6 +24,23 @@ def _new_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+async def _attach_availability(db, user, conversation_id: int, corr: str, doctor: dict) -> tuple[dict, list]:
+    """Fetch real slots for the top doctor; fail-open to {} on any error."""
+    from ..mcp import adapter, client
+
+    try:
+        out = await adapter.call(
+            db, "check_availability", {"doctor_id": doctor.get("id"), "days_ahead": 7},
+            user=user, conversation_id=conversation_id, corr=corr,
+            tool_call_id=client.new_tool_call_id())
+    except Exception:
+        return {}, []
+    if not out.get("ok"):
+        return {}, [f"availability: {out.get('code')}"]
+    slots = (out.get("data") or {}).get("slots", [])[:6]
+    return {"slots": slots}, [f"check_availability doctor={doctor.get('id')} -> {len(slots)} slots"]
+
+
 async def run_turn(db, user, body: dict) -> dict:
     """Run one turn. Returns the public chat envelope (legacy-compatible)."""
     from app import models
@@ -65,6 +82,21 @@ async def run_turn(db, user, body: dict) -> dict:
     trace = list(out.get("trace", []))
     data = dict(out.get("data") or {})
     data.setdefault("graph_run_id", graph_run_id)
+    # Legacy parity: a book/discover answer carries real availability for the
+    # top doctor so UI slot cards work (same as the v1 chat flow did).
+    if (out.get("intent") == "book" or out.get("selected_tool") == "search_doctors"):
+        docs = ((out.get("tool_result") or {}).get("data") or {}).get("doctors") or []
+        if docs and not data.get("slots"):
+            enriched, etrace = await _attach_availability(db, user, conv.id, corr, docs[0])
+            data.update(enriched)
+            trace.extend(etrace)
+            if enriched.get("slots") and powered == "rules":
+                first = docs[0]
+                slot_lines = "\n".join(
+                    f"- {s['starts_at'][:16].replace('T', ' ')} (slot, calendar {s['calendar_id']})"
+                    for s in enriched["slots"][:6])
+                reply = (reply.rstrip() + f"\n\nEarliest real availability with {first.get('name')}:\n{slot_lines}\n\n"
+                         "Tell me a slot and I'll verify + confirm.")
     safety = dict(out.get("safety") or {"verdict": "allow", "reason_category": ""})
 
     # Persist conversational slice (6-key discipline) + pending confirmation.
