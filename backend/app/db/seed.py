@@ -111,8 +111,9 @@ def _full_seed(db: Session):
     h_objs = []
     for name, slug, status, addr, city in hospitals:
         h = db.query(models.Hospital).filter(models.Hospital.slug==slug).first()
+        hours = json.dumps({"mon":[["09:00","17:00"]],"tue":[["09:00","17:00"]],"wed":[["09:00","17:00"]],"thu":[["09:00","17:00"]],"fri":[["09:00","15:00"]]})
         if not h:
-            h = models.Hospital(name=name, slug=slug, status=status, address=addr, city=city, phone="+1-555-0100", contact_email=f"admin@{slug}.org", operating_hours=json.dumps({"mon":[["09:00","17:00"]]}), services=json.dumps(["outpatient","imaging","lab"]), ehr_vendor="mock", cover_url=hospital_cover_for(slug), external_facility_id=f"ext-fac-{slug}")
+            h = models.Hospital(name=name, slug=slug, status=status, address=addr, city=city, phone="+1-555-0100", contact_email=f"admin@{slug}.org", operating_hours=hours, services=json.dumps(["outpatient","imaging","lab"]), ehr_vendor="mock", cover_url=hospital_cover_for(slug), external_facility_id=f"ext-fac-{slug}")
             db.add(h); db.commit(); db.refresh(h)
         elif not getattr(h, "cover_url", None):
             try:
@@ -152,7 +153,7 @@ def _full_seed(db: Session):
         for name, spec, exp in doc_names[:4 if h.slug.startswith("city") else 3]:
             if db.query(models.Doctor).filter(models.Doctor.hospital_id==h.id, models.Doctor.name==name).first(): continue
             sp = db.query(models.Specialty).filter(models.Specialty.hospital_id==h.id, models.Specialty.name==spec).first()
-            d = models.Doctor(hospital_id=h.id, name=name, specialty_id=sp.id if sp else None, qualifications="MD", experience_years=exp, languages=json.dumps(["English","Hindi"] if k % 2 == 0 else ["English"]), consultation_types=json.dumps(["in_person","video"]), duration_minutes=30, status="active", external_provider_id=f"ext-prov-{h.slug}-{k}", rating=round(4.3+random.random()*0.6,1), photo_url=DOCTOR_PHOTOS[k % len(DOCTOR_PHOTOS)])
+            d = models.Doctor(hospital_id=h.id, name=name, specialty_id=sp.id if sp else None, qualifications=f"MD, {spec}", experience_years=exp, languages=json.dumps(["English","Hindi"] if k % 2 == 0 else ["English"]), consultation_types=json.dumps(["in_person","video"]), duration_minutes=30, status="active", external_provider_id=f"ext-prov-{h.slug}-{k}", rating=round(4.3+random.random()*0.6,1), photo_url=DOCTOR_PHOTOS[k % len(DOCTOR_PHOTOS)])
             db.add(d); db.commit(); db.refresh(d)
             _u(db, f"doc{k}@example.org", "doctor", name, hospital_id=h.id, doctor_id=d.id)
             cal = models.Calendar(hospital_id=h.id, doctor_id=d.id, name="Main", is_active=True, working_hours=json.dumps({"mon":[["09:00","17:00"]],"tue":[["09:00","17:00"]],"wed":[["09:00","17:00"]],"thu":[["09:00","17:00"]],"fri":[["09:00","15:00"]]}))

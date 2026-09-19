@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 from .. import models
 
 CAPABILITIES = [
-    {"name":"search_hospitals","description":"Search approved hospitals","idempotent":True},
-    {"name":"search_doctors","description":"Search active doctors","idempotent":True},
+    {"name":"search_hospitals","description":"Search approved hospitals (supports q, city)","idempotent":True},
+    {"name":"search_doctors","description":"Search active doctors (supports specialty, hospital_id, q)","idempotent":True},
+    {"name":"get_doctor_details","description":"Full doctor profile: hospital, stats, next slots, reviews summary","idempotent":True},
+    {"name":"get_hospital_details","description":"Full hospital profile: departments, doctors, stats, reviews summary","idempotent":True},
     {"name":"check_availability","description":"Real slot lookup (never invented)","idempotent":True},
     {"name":"lookup_patient","description":"Patient lookup","idempotent":True},
     {"name":"get_appointment","description":"Get appointment by id","idempotent":True},
@@ -51,12 +53,17 @@ async def invoke(db: Session, name: str, args: dict, *, user, conversation_id=No
         raise
 
 async def _search_hospitals(db, a, user=None, corr="", idem=""):
+    from sqlalchemy import func as _func
     q = db.query(models.Hospital).filter(models.Hospital.status=="approved")
     if a.get("city"): q = q.filter(models.Hospital.city.ilike(f"%{a['city']}%"))
     if a.get("q"):
         term = f"%{a['q']}%"
         q = q.filter((models.Hospital.name.ilike(term)) | (models.Hospital.city.ilike(term)))
-    return {"hospitals": [{"id":h.id,"name":h.name,"city":h.city,"services":h.services} for h in q.limit(20).all()]}
+    out = []
+    for h in q.limit(20).all():
+        dcnt = db.query(_func.count(models.Doctor.id)).filter(models.Doctor.hospital_id==h.id, models.Doctor.status=="active").scalar() or 0
+        out.append({"id":h.id,"name":h.name,"city":h.city,"address":h.address,"services":h.services,"cover_url":getattr(h,"cover_url",""),"doctor_count":dcnt,"avg_rating":0.0,"review_count":0})
+    return {"hospitals": out}
 async def _search_doctors(db, a, user=None, corr="", idem=""):
     q = db.query(models.Doctor).filter(models.Doctor.status=="active")
     _scope_check(user, a.get("hospital_id"))
@@ -68,8 +75,49 @@ async def _search_doctors(db, a, user=None, corr="", idem=""):
     out = []
     for d in ds:
         sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
-        out.append({"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"specialty":sp.name if sp else "","experience_years":d.experience_years,"rating":d.rating,"duration_minutes":d.duration_minutes})
+        h = db.query(models.Hospital).filter(models.Hospital.id==d.hospital_id).first()
+        out.append({"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","experience_years":d.experience_years,"rating":d.rating,"review_count":0,"avg_rating":d.rating,"photo_url":d.photo_url,"duration_minutes":d.duration_minutes})
     return {"doctors": out}
+async def _get_doctor_details(db, a, user=None, corr="", idem=""):
+    from sqlalchemy import func as _func
+    from datetime import datetime, timezone, timedelta
+    did = int(a.get("doctor_id") or a.get("id") or 0)
+    if a.get("name") and not did:
+        d = db.query(models.Doctor).filter(models.Doctor.status=="active", models.Doctor.name.ilike(f"%{a['name']}%")).first()
+    else:
+        d = db.query(models.Doctor).filter(models.Doctor.id==did).first()
+    if not d: raise ValueError("Doctor not found")
+    _scope_check(user, d.hospital_id)
+    sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
+    h = db.query(models.Hospital).filter(models.Hospital.id==d.hospital_id).first()
+    completed = db.query(_func.count(models.Appointment.id)).filter(models.Appointment.doctor_id==d.id, models.Appointment.status=="completed").scalar() or 0
+    next_slots = []
+    try:
+        from ..scheduling.engine import compute_slots
+        base = datetime.now(timezone.utc)
+        for i in range(3):
+            next_slots += compute_slots(db, d.id, base + timedelta(days=i), None)
+            if len(next_slots) >= 3: break
+        next_slots = next_slots[:3]
+    except Exception:
+        next_slots = []
+    return {"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":0,"avg_rating":d.rating,"completed_visits":completed,"next_slots":next_slots,"reviews_summary":"No patient reviews yet — be the first after a completed visit."}
+async def _get_hospital_details(db, a, user=None, corr="", idem=""):
+    from sqlalchemy import func as _func
+    hid = int(a.get("hospital_id") or a.get("id") or 0)
+    if a.get("name") and not hid:
+        h = db.query(models.Hospital).filter(models.Hospital.status=="approved", models.Hospital.name.ilike(f"%{a['name']}%")).first()
+    else:
+        h = db.query(models.Hospital).filter(models.Hospital.id==hid).first()
+    if not h: raise ValueError("Hospital not found")
+    depts = [{"id":x.id,"name":x.name} for x in db.query(models.Department).filter(models.Department.hospital_id==h.id).all()]
+    docs = db.query(models.Doctor).filter(models.Doctor.hospital_id==h.id, models.Doctor.status=="active").all()
+    top = []
+    for d in docs[:8]:
+        sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
+        top.append({"id":d.id,"name":d.name,"specialty":sp.name if sp else "","rating":d.rating,"photo_url":d.photo_url})
+    completed = db.query(_func.count(models.Appointment.id)).filter(models.Appointment.hospital_id==h.id, models.Appointment.status=="completed").scalar() or 0
+    return {"id":h.id,"name":h.name,"slug":h.slug,"city":h.city,"address":h.address,"phone":h.phone,"operating_hours":h.operating_hours,"services":h.services,"cover_url":getattr(h,"cover_url",""),"departments":depts,"doctor_count":len(docs),"doctors":top,"avg_rating":0.0,"review_count":0,"completed_visits":completed,"reviews_summary":"No patient reviews yet."}
 async def _check_availability(db, a, user=None, corr="", idem=""):
     from ..scheduling.engine import compute_slots
     from datetime import datetime, timezone, timedelta
@@ -187,4 +235,4 @@ async def _transfer(db, a, user=None, corr="", idem=""):
     ops(db, "human_escalation", a.get("reason","escalated"), "warn", a.get("hospital_id"), corr, {})
     return {"escalated": True, "queue": "care-ops"}
 
-_IMPL = {"search_hospitals":_search_hospitals,"search_doctors":_search_doctors,"check_availability":_check_availability,"lookup_patient":_lookup_patient,"get_appointment":_get_appointment,"create_appointment":_create_appointment,"reschedule_appointment":_reschedule,"cancel_appointment":_cancel,"get_questionnaire":_get_q,"submit_questionnaire":_submit_q,"send_notification":_send_notif,"start_workflow":_start_wf,"get_context":_get_ctx,"update_preferences":_upd_prefs,"verify_external_appointment":_verify,"synchronize_state":_sync,"transfer_to_human":_transfer}
+_IMPL = {"search_hospitals":_search_hospitals,"search_doctors":_search_doctors,"get_doctor_details":_get_doctor_details,"get_hospital_details":_get_hospital_details,"check_availability":_check_availability,"lookup_patient":_lookup_patient,"get_appointment":_get_appointment,"create_appointment":_create_appointment,"reschedule_appointment":_reschedule,"cancel_appointment":_cancel,"get_questionnaire":_get_q,"submit_questionnaire":_submit_q,"send_notification":_send_notif,"start_workflow":_start_wf,"get_context":_get_ctx,"update_preferences":_upd_prefs,"verify_external_appointment":_verify,"synchronize_state":_sync,"transfer_to_human":_transfer}

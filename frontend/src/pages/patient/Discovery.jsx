@@ -29,7 +29,7 @@ export function Hospitals() {
           </div>
         </Cover>
         <div className="p-5 pt-3">
-          <div className="text-sm text-ink-soft">{h.city} · EHR: {h.ehr_vendor}</div>
+          <div className="text-sm text-ink-soft">{h.city} · {h.address} · {h.doctor_count ?? 0} doctors · ★ {h.avg_rating ?? 0} ({h.review_count ?? 0} reviews)</div>
           <div className="mt-3 flex gap-2">
             <Link to={`/app/doctors?hospital_id=${h.id}`} className="btn-primary text-sm">View doctors →</Link>
             <Link to="/app/book" className="btn-ghost text-sm">Quick book</Link>
@@ -51,7 +51,7 @@ export function Doctors() {
     </div>
     <div className="grid md:grid-cols-2 gap-4">{rows.map(d => (
       <Card key={d.id} className="card-hover flex gap-4"><Avatar name={d.name} size={64} photo={d.photo_url} seed={d.id} plain={false} />
-        <div className="flex-1"><div className="font-bold">{d.name}</div><div className="text-sm text-ink-soft">{d.specialty} · {d.hospital_name} · {d.experience_years}y exp · ★ {d.rating}</div>
+        <div className="flex-1"><div className="font-bold">{d.name}</div><div className="text-sm text-ink-soft">{d.specialty} · {d.hospital_name}{d.hospital_city ? ` (${d.hospital_city})` : ''} · {d.experience_years}y exp · ★ {d.rating}{d.review_count != null ? ` (${d.review_count} reviews)` : ''}</div>
         <div className="mt-1"><Pill value={d.status} /></div>
         <Link to={`/app/doctors/${d.id}/slots`} className="btn-primary text-sm mt-2 inline-block">Check availability</Link></div></Card>))}</div></div>
 }
@@ -76,6 +76,7 @@ export function Slots() {
   }
   return <div><PageHead title={doc ? doc.name : 'Availability'} sub="Real slots from the scheduling engine — never invented. Select a slot, add details, then confirm." />
     {msg && <div className="card p-3 mb-3 text-sm bg-emerald-50">{msg}</div>}
+    {doc && <Card className="mb-4 flex gap-4"><Avatar name={doc.name} size={64} photo={doc.photo_url} seed={doc.id} plain={false} /><div className="text-sm"><div className="font-bold text-base">{doc.name} · ★ {doc.rating} ({doc.review_count ?? 0} reviews)</div><div className="text-ink-soft">{doc.specialty} · {doc.hospital_name}{doc.hospital_city ? ` (${doc.hospital_city})` : ''} · {doc.experience_years}y exp · {doc.qualifications}</div><div className="text-ink-soft">Languages: {doc.languages} · {doc.completed_visits ?? 0} completed visits · No patient reviews yet</div></div></Card>}
     {selected && <div className="card p-4 mb-3 !border-brand/25 animate-fade-up">
       <div className="text-sm"><b>Selected:</b> {new Date(selected.starts_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
         <button type="button" onClick={() => setSelected(null)} className="ml-2 font-bold text-brand-deep underline">change</button></div>

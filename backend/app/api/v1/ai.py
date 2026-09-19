@@ -103,6 +103,62 @@ async def chat(body: dict, db: Session = Depends(get_db), u=Depends(get_current_
                     reply_extra = {"hospitals": hs, "city": city}
             except Exception as e:
                 reply = f"Search hit an issue ({str(e)[:120]}). Want me to escalate to a human?"
+    elif g.get("route") == "profile":
+        tl = text.lower()
+        try:
+            if any(w in tl for w in ["hospital", "clinic", "citycare", "riverside", "northgate"]):
+                name_hint = tl.replace("tell me about", "").replace("who is", "").replace("best", "").strip(" ?.,") or ""
+                if not name_hint and not prior.get("hospital_id"):
+                    reply = "Which hospital? e.g. 'tell me about CityCare General' — or say a city for nearby options."
+                else:
+                    r = await invoke(db, "get_hospital_details", {"name": name_hint} if name_hint else {"hospital_id": prior["hospital_id"]}, user=u, conversation_id=conv.id, corr=corr)
+                    h = r["data"]
+                    trace.append(f"get_hospital_details -> {h.get('name')}")
+                    if prior.get("hospital_id") is None:
+                        prior["hospital_id"] = h.get("id")
+                    docs = "; ".join(f"{x['name']} ({x.get('specialty','')})" for x in (h.get("doctors") or [])[:4]) or "roster updating"
+                    base = (f"**{h.get('name')}** — {h.get('city','')} · {h.get('address','')}\n"
+                            f"Doctors: {h.get('doctor_count',0)} active ({docs})\n"
+                            f"Services: {h.get('services','')} · Completed visits: {h.get('completed_visits',0)}\n"
+                            f"Rating: {h.get('avg_rating',0)} ({h.get('review_count',0)} reviews) — {h.get('reviews_summary','')}\n\n"
+                            f"Want doctors, slots, or another hospital?")
+                    reply, used = await formulate_reply(g, {"message": base})
+                    powered_by = "grok" if used else "rules"
+                    reply_extra = {"hospital": h}
+            else:
+                spec = g.get("specialty") or ""
+                name_hint = tl.replace("tell me about", "").replace("who is", "").replace("dr.", "dr ").replace("best", "").strip()
+                if not spec and not any(len(w) > 2 for w in name_hint.split()):
+                    reply = "Which doctor? Tell me a name (e.g. 'tell me about Dr Maya Rao') or specialty + city (e.g. 'best cardiologist in Springfield')."
+                else:
+                    try:
+                        r = await invoke(db, "search_doctors", {"specialty": spec, "q": name_hint[:40] if name_hint else ""}, user=u, conversation_id=conv.id, corr=corr)
+                        ds = r["data"]["doctors"][:3]
+                        trace.append(f"search_doctors profile spec={spec} -> {len(ds)}")
+                    except Exception:
+                        ds = []
+                    if not ds:
+                        reply = "I couldn't find that doctor among active doctors. Try a name or specialty + city."
+                    else:
+                        d = ds[0]
+                        try:
+                            det = await invoke(db, "get_doctor_details", {"doctor_id": d["id"]}, user=u, conversation_id=conv.id, corr=corr)
+                            dd = det["data"]
+                            trace.append(f"get_doctor_details doctor={d['id']}")
+                        except Exception:
+                            dd = d
+                        prior["doctor_id"] = dd.get("id")
+                        slots = "; ".join(s["starts_at"][:16].replace("T", " ") for s in (dd.get("next_slots") or [])[:3]) or "checking calendar"
+                        base = (f"**{dd.get('name')}** — {dd.get('specialty','')} · {dd.get('experience_years',0)}y exp · ★ {dd.get('rating',0)}\n"
+                                f"{dd.get('hospital_name','')} ({dd.get('hospital_city','')}) · {dd.get('qualifications','')}\n"
+                                f"Languages: {dd.get('languages','')} · Completed visits: {dd.get('completed_visits',0)}\n"
+                                f"Next slots: {slots}\nRating: {dd.get('avg_rating',0)} ({dd.get('review_count',0)} reviews) — No patient reviews yet.\n\n"
+                                f"Want slots, booking, or another doctor?")
+                        reply, used = await formulate_reply(g, {"message": base})
+                        powered_by = "grok" if used else "rules"
+                        reply_extra = {"doctor": dd}
+        except Exception as e:
+            reply = f"Lookup hit an issue ({str(e)[:120]}). Want me to escalate to a human?"
     elif g.get("intent") in ("book",) and g.get("route") == "discover":
         reply, used = await formulate_reply(g)
         powered_by = "grok" if used else "rules"
@@ -112,8 +168,7 @@ async def chat(body: dict, db: Session = Depends(get_db), u=Depends(get_current_
     # persist conversational slice (no sensitive bulk)
     try:
         prior["intent"] = g.get("intent"); prior["specialty"] = g.get("specialty") or prior.get("specialty")
-        if prior.get("city"): prior["city"] = prior["city"]
-        ctx.conversational = json.dumps(prior); db.commit()
+        ctx.conversational = json.dumps({k: prior.get(k) for k in ("intent", "specialty", "city", "hospital_id", "doctor_id", "date_pref") if prior.get(k) is not None}); db.commit()
     except Exception: pass
     db.add(models.AIMessage(conversation_id=conv.id, role="assistant", content=reply)); db.commit()
     return {"conversation_id": conv.id, "correlation_id": corr, "intent": g.get("intent"), "route": g.get("route"), "reply": reply, "trace": trace, "data": reply_extra, "powered_by": powered_by}

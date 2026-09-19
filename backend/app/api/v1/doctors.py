@@ -28,7 +28,7 @@ def list_d(db: Session = Depends(get_db), u=Depends(get_current_user), hospital_
     for d in query.limit(100).all():
         sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
         h = db.query(models.Hospital).filter(models.Hospital.id==d.hospital_id).first()
-        out.append({"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","specialty":sp.name if sp else "","specialty_id":d.specialty_id,"department_id":d.department_id,"qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"external_provider_id":d.external_provider_id})
+        out.append({"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","specialty_id":d.specialty_id,"department_id":d.department_id,"qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":0,"avg_rating":d.rating,"external_provider_id":d.external_provider_id})
     return out
 
 @router.post("/doctors")
@@ -57,12 +57,28 @@ def create_d(b: DocIn, db: Session = Depends(get_db), u=Depends(get_current_user
 
 @router.get("/doctors/{did}")
 def get_d(did: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    from sqlalchemy import func as _func
+    from datetime import datetime, timezone, timedelta
     d = db.query(models.Doctor).filter(models.Doctor.id==did).first()
     if not d: raise HTTPException(404)
     tenant_hospital_id(u, d.hospital_id if u.role!="platform_admin" else None)
     sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
+    h = db.query(models.Hospital).filter(models.Hospital.id==d.hospital_id).first()
     cals = [{"id":c.id,"name":c.name,"is_active":c.is_active,"working_hours":c.working_hours} for c in db.query(models.Calendar).filter(models.Calendar.doctor_id==did).all()]
-    return {"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"specialty":sp.name if sp else "","qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"external_provider_id":d.external_provider_id,"calendars":cals}
+    completed_visits = db.query(_func.count(models.Appointment.id)).filter(models.Appointment.doctor_id==did, models.Appointment.status=="completed").scalar() or 0
+    upcoming_count = db.query(_func.count(models.Appointment.id)).filter(models.Appointment.doctor_id==did, models.Appointment.starts_at>=datetime.now(timezone.utc), models.Appointment.status.in_(["pending","confirmed","rescheduled"])).scalar() or 0
+    # Next 3 real slots (lightweight: today + next 2 days).
+    next_slots = []
+    try:
+        from ...scheduling.engine import compute_slots
+        base = datetime.now(timezone.utc)
+        for i in range(3):
+            next_slots += compute_slots(db, did, base + timedelta(days=i), None)
+            if len(next_slots) >= 3: break
+        next_slots = next_slots[:3]
+    except Exception:
+        next_slots = []
+    return {"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":0,"avg_rating":d.rating,"completed_visits":completed_visits,"upcoming_count":upcoming_count,"next_slots":next_slots,"external_provider_id":d.external_provider_id,"calendars":cals}
 
 @router.patch("/doctors/{did}")
 def patch_d(did: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
