@@ -11,7 +11,7 @@ import { BookFind, BookSlots } from './pages/patient/Book.jsx'
 import { Upcoming, History, Detail, Questionnaires, QFill, Prefs, Profile } from './pages/patient/Appts.jsx'
 import { Dash as DocDash, ApptList, Calendar, Availability, ApptDetail } from './pages/doctor/Doctor.jsx'
 import { Dash as HDash, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, AIActivity as HAI, Integrations as HInt, Workflows as HWf, Notifications, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
-import { Dash as ADash, Applications, ApplicationDetail, TablePage, Integrations as AInt, Reconciliation, AIActivity as AAI, Analytics as AAn, OpsHealth } from './pages/admin/Admin.jsx'
+import { Dash as ADash, Applications, ApplicationDetail, TablePage, AIActivity as AAI, Analytics as AAn, OpsHealth } from './pages/admin/Admin.jsx'
 
 const isToday = (a) => new Date(a.starts_at).toDateString() === new Date().toDateString()
 const isUpcoming = (a) => new Date(a.starts_at) >= new Date() && ['confirmed', 'pending', 'rescheduled'].includes(a.status)
@@ -75,9 +75,6 @@ export default function App() {
       <Route path="/admin/patients" element={<Require roles={['platform_admin']}><TablePage title="Patients" path="/patients" cols={['id', 'full_name', 'email', 'external_patient_id']} /></Require>} />
       <Route path="/admin/appointments" element={<Require roles={['platform_admin']}><TablePage title="Appointments" path="/appointments" cols={['id', 'status', 'starts_at', 'doctor_name', 'patient_name', 'integration_status']} /></Require>} />
       <Route path="/admin/ai" element={<Require roles={['platform_admin']}><AAI /></Require>} />
-      <Route path="/admin/integrations" element={<Require roles={['platform_admin']}><AInt /></Require>} />
-      <Route path="/admin/reconciliation" element={<Require roles={['platform_admin']}><Reconciliation /></Require>} />
-      <Route path="/admin/workflows" element={<Require roles={['platform_admin']}><TablePage title="Workflow executions" path="/workflow-executions" cols={['id', 'workflow_id', 'status', 'correlation_id']} /></Require>} />
       <Route path="/admin/analytics" element={<Require roles={['platform_admin']}><AAn /></Require>} />
       <Route path="/admin/audit" element={<Require roles={['platform_admin']}><TablePage title="Audit log" path="/audit" cols={['id', 'action', 'entity', 'correlation_id']} /></Require>} />
       <Route path="/admin/ops" element={<Require roles={['platform_admin']}><OpsHealth /></Require>} />

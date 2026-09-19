@@ -10,32 +10,40 @@ export function Dash() {
   const capTotal = Number(d?.cap_success || 0) + Number(d?.cap_failed || 0)
   const capRate = capTotal ? `${Math.round((Number(d.cap_success) / capTotal) * 100)}%` : '–'
   const kpis = [['Total hospitals', d?.hospitals], ['Pending applications', d?.applications_pending], ['Under review', d?.hospitals_under_review], ['Approved', d?.hospitals_approved], ['Rejected', d?.hospitals_rejected], ['Correction required', d?.hospitals_corrections], ['Suspended', d?.hospitals_suspended], ['Draft', d?.hospitals_draft], ['Doctors', d?.doctors], ['Patients', d?.patients], ['Appointments', d?.appointments], ['AI conversations', d?.ai_conversations], ['Capability success', capRate], ['Cap failed', d?.cap_failed]]
-  return <div><PageHead title="Platform operations" sub="Hospitals by lifecycle status, review queue, health, AI, integrations — one wall." />
+  return <div><PageHead title="Platform operations" sub="Hospitals by lifecycle status and review queue — one wall." />
     <div className="grid md:grid-cols-4 gap-4">{kpis.map(([l, v]) => <Card key={l}><div className="text-xs font-bold text-ink-soft">{l.toUpperCase()}</div><div className="text-3xl font-bold">{v ?? '–'}</div></Card>)}</div>
-    <div className="grid md:grid-cols-3 gap-4 mt-4">
+    <div className="grid md:grid-cols-1 gap-4 mt-4">
       <Card><div className="font-bold">Review queue</div><div className="text-sm mt-1">Submitted: <b>{d?.hospitals_submitted ?? 0}</b> · Under review: <b>{d?.hospitals_under_review ?? 0}</b> · Corrections: <b>{d?.hospitals_corrections ?? 0}</b></div><Link to="/admin/applications" className="btn-primary text-sm mt-3 inline-block">Open review queue</Link></Card>
-      <Card className={Number(d?.reconciliation_open) > 0 ? '!border-red-300' : ''}><div className="font-bold">Recovery queue</div><div className="text-sm mt-1">Open reconciliations: <b>{d?.reconciliation_open ?? 0}</b> · Unknown outcomes: <b>{d?.unknown_outcome ?? 0}</b></div><Link to="/admin/reconciliation" className="btn-ghost text-sm mt-3 inline-block">Open failure/recovery view</Link></Card>
-      <Card><div className="font-bold">Failure demo (1 click)</div><div className="text-sm text-ink-soft mt-1">Book with <code>simulate=timeout_after_create</code> via API or MCP, then watch probe → sync without duplicate here and in Integrations.</div><Link to="/admin/integrations" className="btn-ghost text-sm mt-3 inline-block">View integration chain</Link></Card>
     </div></div>
 }
 export function Applications() {
-  const [rows, setRows] = useState([]); const [f, setF] = useState('submitted'); const [note, setNote] = useState(''); const [acting, setActing] = useState(null)
-  const load = () => api(`/hospitals?status=${f === 'all' ? '' : f}`).then(setRows).catch(() => {})
-  useEffect(load, [f])
-  const act = async (id, action) => {
-    setActing(`${id}-${action}`)
-    try { await api(`/hospitals/${id}/review`, { method: 'POST', body: { action, note } }); setNote(''); load() }
-    catch (e) { alert(`Could not ${action}: ${e.message}`) } finally { setActing(null) }
+  const [rows, setRows] = useState([]); const [f, setF] = useState('submitted'); const [note, setNote] = useState(''); const [acting, setActing] = useState(null); const [msg, setMsg] = useState('')
+  const load = (status = f) => api(`/hospitals?status=${status === 'all' ? '' : status}`).then(setRows).catch(() => {})
+  useEffect(() => { load() }, [f])
+  // Backend statuses differ from action names: follow the item to its new
+  // status filter so the card stays visible instead of the list going blank.
+  const NEXT_FILTER = { under_review: 'under_review', approve: 'approved', reject: 'rejected', corrections: 'corrections_requested', suspend: 'suspended', reactivate: 'approved' }
+  const act = async (id, action, name) => {
+    setActing(`${id}-${action}`); setMsg('')
+    try {
+      const r = await api(`/hospitals/${id}/review`, { method: 'POST', body: { action, note } })
+      setNote(''); const next = NEXT_FILTER[action] || f; setF(next)
+      if (next !== f) { setRows([]); await api(`/hospitals?status=${next === 'all' ? '' : next}`).then(setRows).catch(() => {}) }
+      else load()
+      setMsg(`${name || `#${id}`} → ${r.status}`)
+    }
+    catch (e) { setMsg(`Could not ${action}: ${e.message}`) } finally { setActing(null) }
   }
   const ACTIONS = ['under_review', 'approve', 'reject', 'corrections', 'suspend', 'reactivate']
   const STATUSES = ['submitted', 'under_review', 'corrections_requested', 'approved', 'rejected', 'suspended', 'draft', 'all']
-  return <div><PageHead title="Hospital applications" sub="Pending Review: new → under review → correction required. Open any card for the full file." right={<select className="input !w-auto" aria-label="Filter by status" value={f} onChange={e => setF(e.target.value)}>{STATUSES.map(s => <option key={s}>{s}</option>)}</select>} />
+  return <div><PageHead title="Hospital applications" sub="Pending Review: new → under review → correction required. Open any card for the full file." right={<select className="input !w-auto" aria-label="Filter by status" value={f} onChange={e => { setF(e.target.value); setMsg('') }}>{STATUSES.map(s => <option key={s}>{s}</option>)}</select>} />
     <Card className="mb-3"><label htmlFor="app-note" className="text-xs font-bold">REVIEW NOTE (attached to approve / reject / corrections…)</label>
       <input id="app-note" className="input mt-1" placeholder="e.g. Verified license, looks good" value={note} onChange={e => setNote(e.target.value)} /></Card>
+    {msg && <div className="card p-3 mb-3 text-sm">{msg}</div>}
     {rows.map(h => <Card key={h.id} className="mb-3 flex flex-wrap items-center gap-3"><div className="flex-1 min-w-[200px]"><div className="font-bold">{h.name}</div><div className="text-sm text-ink-soft">{h.city} · {h.contact_email} · {h.doctor_count ?? 0} doctors · submitted {h.created_at?.slice(0, 10) || '—'}</div>{h.review_notes && <div className="text-xs text-amber-700 mt-1">Note: {h.review_notes}</div>}</div><Pill value={h.status} />
       <Link to={`/admin/applications/${h.id}`} className="btn-primary text-xs">Open / review</Link>
-      <div className="flex flex-wrap gap-1.5">{ACTIONS.map(a => <button key={a} type="button" disabled={!!acting} onClick={() => act(h.id, a)} className="btn-ghost text-xs">{acting === `${h.id}-${a}` ? '…' : a.replace('_', ' ')}</button>)}</div></Card>)}
-    {!rows.length && <Card><Empty title="Empty queue" sub="New applications appear here." /></Card>}</div>
+      <div className="flex flex-wrap gap-1.5">{ACTIONS.map(a => <button key={a} type="button" disabled={!!acting} onClick={() => act(h.id, a, h.name)} className="btn-ghost text-xs">{acting === `${h.id}-${a}` ? '…' : a.replace('_', ' ')}</button>)}</div></Card>)}
+    {!rows.length && !acting && <Card><Empty title={msg ? 'Moved to another status' : 'Empty queue'} sub={msg || 'New applications appear here. Use the status filter above.'} /></Card>}</div>
 }
 export function ApplicationDetail() {
   const { id } = useParams()
@@ -47,7 +55,7 @@ export function ApplicationDetail() {
     try { const r = await api(`/hospitals/${id}/review`, { method: 'POST', body: { action, note } }); setNote(''); load(); setMsg(`Status → ${r.status}`) }
     catch (e) { setMsg(`Could not ${action}: ${e.message}`) } finally { setBusy(false) }
   }
-  if (!h) return <div className="p-8">{msg || 'Loading…'}</div>
+  if (!h) return <div className="p-8">{msg ? <Card><Empty title="Could not load application" sub={msg} /><Link to="/admin/applications" className="btn-ghost text-sm mt-3 inline-block">← Back to review queue</Link></Card> : 'Loading…'}</div>
   const ACTIONS = ['under_review', 'approve', 'reject', 'corrections', 'suspend', 'reactivate']
   return <div><PageHead title={h.name} sub={`Application ${h.slug} · submitted ${h.created_at?.slice(0, 10) || '—'}`} right={<Pill value={h.status} />} />
     {msg && <div className="card p-3 mb-3 text-sm">{msg}</div>}
@@ -65,22 +73,6 @@ export function TablePage({ title, path, cols }) {
   return <div><PageHead title={title} right={<span className="text-sm text-ink-soft">{rows.length} rows</span>} />
     <Card className="overflow-auto"><table className="tbl w-full min-w-[640px]"><thead><tr>{cols.map(c => <th key={c}>{c}</th>)}</tr></thead><tbody>
       {rows.slice(0, 100).map((r) => <tr key={r.id ?? JSON.stringify(r).slice(0, 40)}>{cols.map(c => <td key={c} className="pr-4 max-w-[280px] truncate">{typeof r[c] === 'object' ? JSON.stringify(r[c])?.slice(0, 80) : String(r[c] ?? '—')}</td>)}</tr>)}</tbody></table></Card></div>
-}
-export function Integrations() {
-  const [ops, setOps] = useState([])
-  useEffect(() => { api('/integrations/operations').then(setOps).catch(() => {}) }, [])
-  return <div><PageHead title="Integration activity" sub="Create → verify → sync. Unknown outcomes probed, never blindly retried." />
-    {ops.slice(0, 60).map(o => <Card key={o.id} className="mb-2"><div className="flex justify-between text-sm"><span><code>{o.kind}</code> · appt #{o.ref_id} · attempts {o.attempts}</span><Pill value={o.status} /></div><div className="text-xs font-mono text-ink-soft mt-1">corr {o.correlation_id} · {o.error?.slice(0, 200)}</div></Card>)}
-    {!ops.length && <Card><Empty title="No operations yet" /></Card>}</div>
-}
-export function Reconciliation() {
-  const [rows, setRows] = useState([])
-  const load = () => api('/reconciliation').then(setRows).catch(() => {})
-  useEffect(load, [])
-  return <div><PageHead title="Reconciliation & recovery" sub="Timeout → query external → sync safely → no duplicates." right={<button className="btn-ghost text-sm" onClick={load}>Refresh</button>} />
-    {rows.map(r => <Card key={r.id} className={`mb-3 ${r.status === 'open' ? '!border-red-300' : ''}`}><div className="flex flex-wrap items-center gap-2 text-sm"><b>#{r.id}</b><span>{r.issue}</span><span className="text-ink-soft">appt #{r.appointment_id}</span><Pill value={r.status} /><code className="text-xs">{r.correlation_id}</code></div>
-      {r.status === 'open' && <div className="flex gap-2 mt-2"><button className="btn-primary text-xs" onClick={async () => { await api(`/appointments/${r.appointment_id}/retry-sync`, { method: 'POST', body: {} }); load() }}>Probe EHR + sync</button><button className="btn-ghost text-xs" onClick={async () => { await api(`/reconciliation/${r.id}/resolve`, { method: 'POST', body: { status: 'escalated', resolution: 'Escalated to ops queue' } }); load() }}>Escalate to human</button><button className="btn-ghost text-xs" onClick={async () => { await api(`/reconciliation/${r.id}/resolve`, { method: 'POST', body: { status: 'resolved', resolution: 'Manually verified' } }); load() }}>Mark resolved</button></div>}</Card>)}
-    {!rows.length && <Card><Empty title="Queue clear" sub="Failures with unknown outcomes land here." /></Card>}</div>
 }
 export function AIActivity() {
   const [c, setC] = useState([]); const [e, setE] = useState([]); const [evals, setEvals] = useState([])
