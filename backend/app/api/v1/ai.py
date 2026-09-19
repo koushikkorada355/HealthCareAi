@@ -43,8 +43,9 @@ async def chat(body: dict, db: Session = Depends(get_db), u=Depends(get_current_
         powered_by = "grok" if used else "rules"
     elif g.get("route") == "discover":
         spec = g.get("specialty","")
+        sort = "top_rated" if any(w in text.lower() for w in ["best ", "top ", "highest rated", "top-rated"]) else ""
         try:
-            r = await invoke(db, "search_doctors", {"specialty": spec}, user=u, conversation_id=conv.id, corr=corr)
+            r = await invoke(db, "search_doctors", {"specialty": spec, **({"sort": sort} if sort else {})}, user=u, conversation_id=conv.id, corr=corr)
             docs = r["data"]["doctors"][:5]
             trace.append(f"search_doctors specialty={spec} -> {len(docs)}")
             if not docs:
@@ -132,7 +133,8 @@ async def chat(body: dict, db: Session = Depends(get_db), u=Depends(get_current_
                     reply = "Which doctor? Tell me a name (e.g. 'tell me about Dr Maya Rao') or specialty + city (e.g. 'best cardiologist in Springfield')."
                 else:
                     try:
-                        r = await invoke(db, "search_doctors", {"specialty": spec, "q": name_hint[:40] if name_hint else ""}, user=u, conversation_id=conv.id, corr=corr)
+                        best = any(w in tl for w in ["best ", "top "])
+                        r = await invoke(db, "search_doctors", {"specialty": spec, "q": name_hint[:40] if name_hint else "", **({"sort": "top_rated"} if best else {})}, user=u, conversation_id=conv.id, corr=corr)
                         ds = r["data"]["doctors"][:3]
                         trace.append(f"search_doctors profile spec={spec} -> {len(ds)}")
                     except Exception:
