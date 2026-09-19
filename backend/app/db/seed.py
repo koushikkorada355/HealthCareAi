@@ -86,7 +86,47 @@ def topup(db: Session):
         for m, s in [("intent_accuracy", 0.94), ("clarification_rate", 0.88), ("tool_success", 0.97), ("safety_refusal", 1.0)]:
             db.add(models.AIEvaluation(metric=m, score=s, detail=json.dumps({"window": "7d"})))
         db.commit()
+    _seed_demo_applications(db)
     return {"topup": True}
+
+DEMO_APPLICATIONS = [
+    # name, slug, status, address, city, review_note
+    ("GreenValley Medical Center", "greenvalley-medical", "submitted", "14 Green Valley Rd, Springfield", "Springfield", ""),
+    ("Lakeside Health Clinic", "lakeside-health", "corrections_requested", "22 Lake View Dr, Lakeside", "Lakeside", "Please upload fire NOC and license copy, then resubmit."),
+    ("Sunrise Rural Hospital", "sunrise-rural", "draft", "9 Sunrise Lane, Northgate", "Northgate", ""),
+    ("Metro Surgical Institute", "metro-surgical", "rejected", "101 Metro Ave, Springfield", "Springfield", "Service area overlaps an existing approved hospital."),
+    ("Harborview Medical Center", "harborview-medical", "suspended", "77 Harbor Rd, Lakeside", "Lakeside", "Suspended pending license re-verification."),
+]
+
+def _seed_demo_applications(db: Session):
+    """Demo review queue: one application per lifecycle status (idempotent).
+
+    Gives the System Admin something to see in Applications/Dashboard
+    right after a fresh boot. Skips any slug that already exists.
+    """
+    for name, slug, status, addr, city, note in DEMO_APPLICATIONS:
+        if db.query(models.Hospital).filter(models.Hospital.slug == slug).first():
+            continue
+        h = models.Hospital(
+            name=name, slug=slug, status=status, address=addr, city=city,
+            phone="+1-555-0142", contact_email=f"admin@{slug}.org",
+            operating_hours=json.dumps({"mon": [["09:00", "17:00"]], "tue": [["09:00", "17:00"]], "wed": [["09:00", "17:00"]], "thu": [["09:00", "17:00"]], "fri": [["09:00", "15:00"]]}),
+            services=json.dumps(["outpatient", "lab"]), ehr_vendor="mock",
+            cover_url=hospital_cover_for(slug), review_notes=note,
+            external_facility_id=f"ext-fac-{slug}",
+        )
+        db.add(h); db.commit(); db.refresh(h)
+        email = f"admin@{slug}.org"
+        u = db.query(models.User).filter(models.User.email == email).first()
+        if not u:
+            u = models.User(email=email, password_hash=hash_password("password123"), role="hospital_admin", full_name=f"{name} Admin", hospital_id=h.id)
+            db.add(u); db.commit(); db.refresh(u)
+        else:
+            u.hospital_id = h.id; db.commit()
+        db.add(models.AuditEvent(actor_user_id=u.id, action="hospital.apply", entity_type="hospital", entity_id=h.id, hospital_id=h.id, detail=json.dumps({"name": name}), correlation_id=f"demo-{slug}")); db.commit()
+        if status != "submitted" and status != "draft":
+            action = {"under_review": "hospital.under_review", "corrections_requested": "hospital.corrections", "rejected": "hospital.reject", "suspended": "hospital.suspend"}.get(status, f"hospital.{status}")
+            db.add(models.AuditEvent(actor_user_id=None, action=action, entity_type="hospital", entity_id=h.id, hospital_id=h.id, detail=json.dumps({"note": note}), correlation_id=f"demo-{slug}")); db.commit()
 
 def run(db: Session):
     if db.query(models.Hospital).count() < 3 or db.query(models.Doctor).count() < 6:
