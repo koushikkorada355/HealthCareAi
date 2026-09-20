@@ -4,16 +4,14 @@ import Landing from './pages/public/Landing.jsx'
 import { Login, Register, Forgot, HospitalApply } from './pages/public/Auth.jsx'
 import { Require } from './routes/guards.jsx'
 import Home from './pages/patient/Home.jsx'
-import Assistant from './pages/patient/Assistant.jsx'
-import Voice from './pages/patient/Voice.jsx'
 import { Hospitals, Doctors, Slots } from './pages/patient/Discovery.jsx'
 import HospitalDetail from './pages/patient/HospitalDetail.jsx'
 import { BookFind, BookSlots } from './pages/patient/Book.jsx'
 import BookConfirm from './pages/patient/BookConfirm.jsx'
 import { Upcoming, History, Detail, Questionnaires, QFill, Prefs, Profile } from './pages/patient/Appts.jsx'
 import { Dash as DocDash, ApptList, Calendar, Availability, ApptDetail, Profile as DocProfile, Questionnaires as DocQ, Activity as DocAct } from './pages/doctor/Doctor.jsx'
-import { Dash as HDash, Profile as HProfile, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, AIActivity as HAI, Integrations as HInt, Workflows as HWf, Notifications, Reviews as HRev, Activity as HAct, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
-import { Dash as ADash, Applications, ApplicationDetail, TablePage, AIActivity as AAI, Analytics as AAn, OpsHealth } from './pages/admin/Admin.jsx'
+import { Dash as HDash, Profile as HProfile, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, Integrations as HInt, Workflows as HWf, Notifications, Reviews as HRev, Activity as HAct, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
+import { Dash as ADash, Applications, ApplicationDetail, TablePage, Analytics as AAn, OpsHealth } from './pages/admin/Admin.jsx'
 
 const isToday = (a) => new Date(a.starts_at).toDateString() === new Date().toDateString()
 const isUpcoming = (a) => new Date(a.starts_at) >= new Date() && ['confirmed', 'pending', 'rescheduled'].includes(a.status)
@@ -29,8 +27,6 @@ export default function App() {
 
       {/* patient */}
       <Route path="/app" element={<Require roles={['patient']}><Home /></Require>} />
-      <Route path="/app/assistant" element={<Require roles={['patient']}><Assistant /></Require>} />
-      <Route path="/app/voice" element={<Require roles={['patient']}><Voice /></Require>} />
       <Route path="/app/hospitals" element={<Require roles={['patient']}><Hospitals /></Require>} />
       <Route path="/app/hospitals/:id" element={<Require roles={['patient']}><HospitalDetail /></Require>} />
       <Route path="/app/doctors" element={<Require roles={['patient']}><Doctors /></Require>} />
@@ -67,7 +63,6 @@ export default function App() {
       <Route path="/hospital/schedules" element={<Require roles={['hospital_admin']}><Schedules /></Require>} />
       <Route path="/hospital/appointments" element={<Require roles={['hospital_admin']}><HAppts /></Require>} />
       <Route path="/hospital/questionnaires" element={<Require roles={['hospital_admin']}><HQ /></Require>} />
-      <Route path="/hospital/ai" element={<Require roles={['hospital_admin']}><HAI /></Require>} />
       <Route path="/hospital/integrations" element={<Require roles={['hospital_admin']}><HInt /></Require>} />
       <Route path="/hospital/workflows" element={<Require roles={['hospital_admin']}><HWf /></Require>} />
       <Route path="/hospital/notifications" element={<Require roles={['hospital_admin']}><Notifications /></Require>} />
@@ -84,7 +79,6 @@ export default function App() {
       <Route path="/admin/doctors" element={<Require roles={['platform_admin']}><TablePage title="Doctors" path="/doctors" cols={['id', 'name', 'specialty', 'hospital_name', 'status']} /></Require>} />
       <Route path="/admin/patients" element={<Require roles={['platform_admin']}><TablePage title="Patients" path="/patients" cols={['id', 'full_name', 'email', 'external_patient_id']} /></Require>} />
       <Route path="/admin/appointments" element={<Require roles={['platform_admin']}><TablePage title="Appointments" path="/appointments" cols={['id', 'status', 'starts_at', 'doctor_name', 'patient_name', 'integration_status']} /></Require>} />
-      <Route path="/admin/ai" element={<Require roles={['platform_admin']}><AAI /></Require>} />
       <Route path="/admin/analytics" element={<Require roles={['platform_admin']}><AAn /></Require>} />
       <Route path="/admin/audit" element={<Require roles={['platform_admin']}><TablePage title="Audit log" path="/audit" cols={['id', 'action', 'entity', 'correlation_id']} /></Require>} />
       <Route path="/admin/ops" element={<Require roles={['platform_admin']}><OpsHealth /></Require>} />

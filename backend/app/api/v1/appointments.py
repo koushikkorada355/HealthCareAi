@@ -72,17 +72,54 @@ def get_a(aid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
 
 @router.post("/appointments/{aid}/reschedule")
 async def resched(aid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
-    from ...mcp.registry import invoke
     if not body.get("new_starts_at") or not body.get("new_ends_at"):
         raise HTTPException(400, "new_starts_at and new_ends_at are required")
-    try: return await invoke(db, "reschedule_appointment", {"appointment_id": aid, "new_starts_at": body["new_starts_at"], "new_ends_at": body["new_ends_at"]}, user=u, corr=new_corr())
-    except (ValueError, PermissionError) as e: raise HTTPException(409, str(e))
+    try:
+        from ...scheduling.engine import validate_slot
+        from ...ehr.mock_client import EHRClient
+        from ...services.workflows import fire_event
+        corr = new_corr()
+        ap = db.query(models.Appointment).filter(models.Appointment.id == aid).first()
+        if not ap: raise ValueError("Not found")
+        tenant_hospital_id(u, ap.hospital_id if u.role != "platform_admin" else None)
+        if u.role == "patient" and ap.patient_id != u.patient_id: raise PermissionError("Not your appointment")
+        if u.role == "doctor" and ap.doctor_id != u.doctor_id: raise PermissionError("Not your appointment")
+        ns = datetime.fromisoformat(str(body["new_starts_at"]).replace("Z", "+00:00"))
+        ne = datetime.fromisoformat(str(body["new_ends_at"]).replace("Z", "+00:00"))
+        validate_slot(db, ap.doctor_id, ap.calendar_id, ns, ne, ignore_appointment_id=ap.id)
+        old = ap.starts_at.isoformat()
+        ap.starts_at, ap.ends_at = ns, ne
+        try: transition(db, ap, "rescheduled", actor=f"user:{u.id}", note=f"{old} -> {ns.isoformat()}", corr=corr)
+        except Exception: db.commit()
+        if ap.external_appointment_id:
+            try:
+                await EHRClient().update_appointment(ap.external_appointment_id, {"starts_at": ns.isoformat(), "ends_at": ne.isoformat()})
+                ap.integration_status = "synced"; db.commit()
+            except Exception: ap.integration_status = "reconciliation_required"; db.commit()
+        fire_event(db, "appointment.rescheduled", ap.hospital_id, {"appointment_id": ap.id}, corr)
+        return {"id": ap.id, "status": ap.status, "starts_at": ap.starts_at.isoformat()}
+    except PermissionError as e: raise HTTPException(403, str(e))
+    except (ValueError, Exception) as e: raise HTTPException(409, str(e)[:500])
 
 @router.post("/appointments/{aid}/cancel")
 async def cancel(aid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
-    from ...mcp.registry import invoke
-    try: return await invoke(db, "cancel_appointment", {"appointment_id": aid, "reason": body.get("reason","")}, user=u, corr=new_corr())
-    except (ValueError, PermissionError) as e: raise HTTPException(409, str(e))
+    try:
+        from ...ehr.mock_client import EHRClient
+        from ...services.workflows import fire_event
+        corr = new_corr()
+        ap = db.query(models.Appointment).filter(models.Appointment.id == aid).first()
+        if not ap: raise ValueError("Not found")
+        tenant_hospital_id(u, ap.hospital_id if u.role != "platform_admin" else None)
+        if u.role == "patient" and ap.patient_id != u.patient_id: raise PermissionError("Not your appointment")
+        if u.role == "doctor" and ap.doctor_id != u.doctor_id: raise PermissionError("Not your appointment")
+        transition(db, ap, "cancelled", actor=f"user:{u.id}", note=(body.get("reason") or "cancelled"), corr=corr)
+        if ap.external_appointment_id:
+            try: await EHRClient().cancel_appointment(ap.external_appointment_id)
+            except Exception: pass
+        fire_event(db, "appointment.cancelled", ap.hospital_id, {"appointment_id": ap.id}, corr)
+        return {"id": ap.id, "status": "cancelled"}
+    except PermissionError as e: raise HTTPException(403, str(e))
+    except (ValueError, Exception) as e: raise HTTPException(409, str(e)[:500])
 
 class CompleteIn(BaseModel):
     to: str = "completed"  # completed | no_show

@@ -7,9 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, L
 export function Dash() {
   const [d, setD] = useState(null)
   useEffect(() => { api('/dashboard/platform').then(setD).catch(() => {}) }, [])
-  const capTotal = Number(d?.cap_success || 0) + Number(d?.cap_failed || 0)
-  const capRate = capTotal ? `${Math.round((Number(d.cap_success) / capTotal) * 100)}%` : '–'
-  const kpis = [['Total hospitals', d?.hospitals], ['Pending applications', d?.applications_pending], ['Under review', d?.hospitals_under_review], ['Approved', d?.hospitals_approved], ['Rejected', d?.hospitals_rejected], ['Correction required', d?.hospitals_corrections], ['Suspended', d?.hospitals_suspended], ['Draft', d?.hospitals_draft], ['Doctors', d?.doctors], ['Patients', d?.patients], ['Appointments', d?.appointments], ['AI conversations', d?.ai_conversations], ['Capability success', capRate], ['Cap failed', d?.cap_failed]]
+  const kpis = [['Total hospitals', d?.hospitals], ['Pending applications', d?.applications_pending], ['Under review', d?.hospitals_under_review], ['Approved', d?.hospitals_approved], ['Rejected', d?.hospitals_rejected], ['Correction required', d?.hospitals_corrections], ['Suspended', d?.hospitals_suspended], ['Draft', d?.hospitals_draft], ['Doctors', d?.doctors], ['Patients', d?.patients], ['Appointments', d?.appointments]]
   return <div><PageHead title="Platform operations" sub="Hospitals by lifecycle status and review queue — one wall." />
     <div className="grid md:grid-cols-4 gap-4">{kpis.map(([l, v]) => <Card key={l}><div className="text-xs font-bold text-ink-soft">{l.toUpperCase()}</div><div className="text-3xl font-bold">{v ?? '–'}</div></Card>)}</div>
     <div className="grid md:grid-cols-1 gap-4 mt-4">
@@ -73,30 +71,6 @@ export function TablePage({ title, path, cols }) {
   return <div><PageHead title={title} right={<span className="text-sm text-ink-soft">{rows.length} rows</span>} />
     <Card className="overflow-auto"><table className="tbl w-full min-w-[640px]"><thead><tr>{cols.map(c => <th key={c}>{c}</th>)}</tr></thead><tbody>
       {rows.slice(0, 100).map((r) => <tr key={r.id ?? JSON.stringify(r).slice(0, 40)}>{cols.map(c => <td key={c} className="pr-4 max-w-[280px] truncate">{typeof r[c] === 'object' ? JSON.stringify(r[c])?.slice(0, 80) : String(r[c] ?? '—')}</td>)}</tr>)}</tbody></table></Card></div>
-}
-export function AIActivity() {
-  const [c, setC] = useState([]); const [e, setE] = useState([]); const [evals, setEvals] = useState([])
-  const [open, setOpen] = useState(null); const [detail, setDetail] = useState(null)
-  useEffect(() => { api('/ai/conversations').then(setC).catch(() => {}); api('/mcp/executions').then(setE).catch(() => {}); api('/ai/evaluation').then(setEvals).catch(() => {}) }, [])
-  const toggle = async (x) => {
-    if (open === x.id) { setOpen(null); setDetail(null); return }
-    setOpen(x.id); setDetail(null)
-    try { setDetail(await api(`/ai/conversations/${x.id}`)) } catch { setDetail({ messages: [], capabilities: [], error: 'Could not load conversation.' }) }
-  }
-  return <div><PageHead title="AI activity & evaluation" sub="Click a conversation to inspect exactly what the AI understood and which capabilities it ran." />
-    {!!evals.length && <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">{evals.slice(0, 4).map(v => <Card key={v.id}><div className="text-xs font-bold text-ink-soft">{String(v.metric).toUpperCase()}</div><div className="text-3xl font-bold">{typeof v.score === 'number' ? `${Math.round(v.score * 100)}%` : v.score}</div></Card>)}</div>}
-    <div className="grid md:grid-cols-2 gap-4"><Card><div className="font-bold mb-2">Conversations ({c.length})</div>{c.slice(0, 20).map(x => (
-      <div key={x.id} className="border-t border-slate-100">
-        <button type="button" onClick={() => toggle(x)} className="flex w-full justify-between py-1.5 text-sm text-left hover:text-brand-deep"><span>#{x.id} · {x.channel} · {x.messages} msgs</span><span>{open === x.id ? '▾' : '▸'}</span></button>
-        {open === x.id && <div className="mb-2 rounded-xl bg-slate-50 p-3">
-          {!detail ? <div className="skeleton h-10 rounded-lg" /> : detail.error ? <div className="text-sm text-crit">{detail.error}</div> : <>
-            {detail.messages?.slice(-8).map((m, i) => <div key={i} className={`mb-1.5 max-w-[95%] rounded-xl px-3 py-1.5 text-xs ${m.role === 'user' ? 'ml-auto bg-brand text-white' : 'bg-white border border-slate-200'}`}>{m.content?.slice(0, 300)}</div>)}
-            {!!detail.capabilities?.length && <div className="mt-2 text-xs font-bold text-ink-soft">CAPABILITIES USED</div>}
-            {detail.capabilities?.map((cp, i) => <div key={i} className="flex justify-between text-xs py-1 border-t border-slate-200"><code>{cp.name}</code><Pill value={cp.status} /></div>)}
-          </>}
-        </div>}
-      </div>))}</Card>
-    <Card><div className="font-bold mb-2">Tool calls</div>{e.slice(0, 30).map(x => <div key={x.id} className="text-sm py-1 border-t border-slate-100 flex justify-between"><code>{x.name}</code><Pill value={x.status} /></div>)}</Card></div></div>
 }
 export function Analytics() {
   const [d, setD] = useState(null)

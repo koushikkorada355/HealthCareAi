@@ -90,12 +90,7 @@ def topup(db: Session):
         if q and ap:
             db.add(models.QuestionnaireResponse(questionnaire_id=q.id, appointment_id=ap.id, patient_id=ap.patient_id,
                 answers_json=json.dumps({"reason": "Shoulder pain for 3 weeks", "pain_level": 6, "first_visit": "yes", "allergies": "None"}),
-                status="completed", collected_via="ai_chat")); db.commit()
-    # AI evaluation samples
-    if db.query(models.AIEvaluation).count() == 0:
-        for m, s in [("intent_accuracy", 0.94), ("clarification_rate", 0.88), ("tool_success", 0.97), ("safety_refusal", 1.0)]:
-            db.add(models.AIEvaluation(metric=m, score=s, detail=json.dumps({"window": "7d"})))
-        db.commit()
+                status="completed", collected_via="web")); db.commit()
     _seed_demo_applications(db)
     return {"topup": True}
 
@@ -314,9 +309,4 @@ def _full_seed(db: Session):
             db.add(models.OperationalEvent(kind="seed.event", severity="info", message=f"Seed event {i}", correlation_id=f"seed{i}"))
             db.add(models.AuditEvent(action="seed.action", entity_type="appointment", detail="{}", correlation_id=f"seed{i}"))
         db.commit()
-    u = db.query(models.User).filter(models.User.email=="aarav@example.org").first()
-    if u and not db.query(models.AIConversation).first():
-        c = models.AIConversation(user_id=u.id, channel="web", status="active", correlation_id="seedconv1"); db.add(c); db.commit(); db.refresh(c)
-        db.add(models.AIMessage(conversation_id=c.id, role="user", content="I need to see a doctor for my shoulder pain sometime this week.")); db.add(models.AIMessage(conversation_id=c.id, role="assistant", content="Found 3 orthopedic options with real availability. Which slot works for you?")); db.commit()
-        db.add(models.AIContext(conversation_id=c.id, conversational=json.dumps({"intent":"book","specialty":"Orthopedics"}))); db.commit()
-        db.add(models.CapabilityExecution(name="search_doctors", status="success", input_json='{"specialty":"Orthopedics"}', output_json='{"doctors":3}', correlation_id="seedconv1")); db.commit()
+    # NOTE: AI layer deleted — AIEvaluation seeding removed. Re-add on fresh AI rebuild.

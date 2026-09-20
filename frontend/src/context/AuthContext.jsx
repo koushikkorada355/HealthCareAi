@@ -28,7 +28,20 @@ export function AuthProvider({ children }) {
     const r = await api('/auth/register', { method: 'POST', body: payload, auth: false })
     localStorage.setItem('ca_token', r.access_token); setUser(r.user); return r.user
   }
-  const logout = () => { localStorage.removeItem('ca_token'); setUser(null) }
+  const logout = () => {
+    localStorage.removeItem('ca_token')
+    // Clear local conversation pointers (backend history is preserved per-user
+    // and re-loads on next login; this avoids showing a stale id on shared devices).
+    try {
+      const keys = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (k && k.startsWith('ca_conv_')) keys.push(k)
+      }
+      keys.forEach(k => localStorage.removeItem(k))
+    } catch { /* ignore */ }
+    setUser(null)
+  }
   const home = () => !user ? '/' : user.role === 'platform_admin' ? '/admin' : user.role === 'hospital_admin' ? '/hospital' : user.role === 'doctor' ? '/doctor' : '/app'
   return <Ctx.Provider value={{ user, loading, login, register, logout, home }}>{children}</Ctx.Provider>
 }

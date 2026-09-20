@@ -32,9 +32,6 @@ def dash_platform(db: Session = Depends(get_db), u=Depends(get_current_user)):
         "confirmed": db.query(func.count(models.Appointment.id)).filter(models.Appointment.status=="confirmed").scalar(),
         "reconciliation_open": db.query(func.count(models.ReconciliationRecord.id)).filter(models.ReconciliationRecord.status=="open").scalar(),
         "unknown_outcome": db.query(func.count(models.IntegrationOperation.id)).filter(models.IntegrationOperation.status=="unknown_outcome").scalar(),
-        "ai_conversations": db.query(func.count(models.AIConversation.id)).scalar(),
-        "cap_success": db.query(func.count(models.CapabilityExecution.id)).filter(models.CapabilityExecution.status=="success").scalar(),
-        "cap_failed": db.query(func.count(models.CapabilityExecution.id)).filter(models.CapabilityExecution.status=="failed").scalar(),
         "workflows_running": db.query(func.count(models.WorkflowExecution.id)).filter(models.WorkflowExecution.status=="running").scalar(),
         "audit_events": db.query(func.count(models.AuditEvent.id)).scalar(),
     }
@@ -53,8 +50,6 @@ def dash_hospital(hospital_id: int | None = None, db: Session = Depends(get_db),
         "reconciliation_open": db.query(func.count(models.ReconciliationRecord.id)).filter(models.ReconciliationRecord.hospital_id==hid, models.ReconciliationRecord.status=="open").scalar(),
         "ehr_ops_failed": db.query(func.count(models.IntegrationOperation.id)).filter(models.IntegrationOperation.hospital_id==hid, models.IntegrationOperation.status.in_(["failed","unknown_outcome"])).scalar(),
         "notifications": db.query(func.count(models.Notification.id)).filter(models.Notification.hospital_id==hid).scalar(),
-        "ai_booked": f(db.query(func.count(models.Appointment.id)).filter(models.Appointment.conversation_id.isnot(None))).scalar(),
-        "ai_conversations": db.query(func.count(models.AIConversation.id)).filter(models.AIConversation.hospital_id==hid).scalar(),
     }
 
 @router.get("/dashboard/doctor")
@@ -65,7 +60,6 @@ def dash_doctor(db: Session = Depends(get_db), u=Depends(get_current_user)):
     tq = db.query(models.Appointment).filter(models.Appointment.doctor_id==u.doctor_id, models.Appointment.starts_at>=today, models.Appointment.starts_at<today+timedelta(days=1))
     return {"today": tq.count(), "upcoming": db.query(func.count(models.Appointment.id)).filter(models.Appointment.doctor_id==u.doctor_id, models.Appointment.starts_at>=today, models.Appointment.status.in_(["confirmed","pending","rescheduled"])).scalar(),
             "completed": db.query(func.count(models.Appointment.id)).filter(models.Appointment.doctor_id==u.doctor_id, models.Appointment.status=="completed").scalar(),
-            "ai_today": tq.filter(models.Appointment.conversation_id.isnot(None)).count(),
             "questionnaires_due": db.query(func.count(models.QuestionnaireResponse.id)).join(models.Appointment, models.Appointment.id==models.QuestionnaireResponse.appointment_id).filter(models.Appointment.doctor_id==u.doctor_id, models.QuestionnaireResponse.status!="completed").scalar()}
 
 @router.get("/dashboard/patient")
@@ -185,15 +179,8 @@ def activity(db: Session = Depends(get_db), u=Depends(get_current_user)):
 def analytics(db: Session = Depends(get_db), u=Depends(get_current_user)):
     if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
     by_status = db.query(models.Appointment.status, func.count(models.Appointment.id)).group_by(models.Appointment.status).all()
-    by_cap = db.query(models.CapabilityExecution.status, func.count(models.CapabilityExecution.id)).group_by(models.CapabilityExecution.status).all()
     by_op = db.query(models.IntegrationOperation.status, func.count(models.IntegrationOperation.id)).group_by(models.IntegrationOperation.status).all()
-    return {"appointments_by_status": {k:v for k,v in by_status}, "capabilities": {k:v for k,v in by_cap}, "ehr_ops": {k:v for k,v in by_op}}
-
-@router.get("/ai/evaluation")
-def ai_eval(db: Session = Depends(get_db), u=Depends(get_current_user)):
-    if u.role != "platform_admin": raise HTTPException(403)
-    rows = db.query(models.AIEvaluation).order_by(models.AIEvaluation.id.desc()).limit(100).all()
-    return [{"id":r.id,"metric":r.metric,"score":r.score,"at":r.created_at.isoformat()} for r in rows]
+    return {"appointments_by_status": {k:v for k,v in by_status}, "ehr_ops": {k:v for k,v in by_op}}
 
 @router.get("/patients")
 def patients(db: Session = Depends(get_db), u=Depends(get_current_user), q: str = ""):

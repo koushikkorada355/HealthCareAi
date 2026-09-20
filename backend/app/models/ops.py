@@ -128,6 +128,29 @@ class ReconciliationRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor_user_id: Mapped[int | None] = mapped_column(nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(128), index=True)
+    entity_type: Mapped[str] = mapped_column(String(64), default="")
+    entity_id: Mapped[int | None] = mapped_column(nullable=True)
+    hospital_id: Mapped[int | None] = mapped_column(ForeignKey("hospitals.id"), nullable=True, index=True)
+    detail: Mapped[str] = mapped_column(Text, default="{}")
+    correlation_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class OperationalEvent(Base):
+    __tablename__ = "operational_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    severity: Mapped[str] = mapped_column(String(16), default="info", index=True)  # info|warn|error|critical
+    message: Mapped[str] = mapped_column(Text)
+    hospital_id: Mapped[int | None] = mapped_column(nullable=True, index=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    meta_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 class Review(Base):
     """Patient review of a doctor or hospital after a completed visit.
 

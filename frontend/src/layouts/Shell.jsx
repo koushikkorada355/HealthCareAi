@@ -22,10 +22,9 @@ const I = {
 }
 
 const NAV = {
-  platform_admin: [['Dashboard', '/admin', 'dash'], ['Applications', '/admin/applications', 'inbox'], ['Hospitals', '/admin/hospitals', 'hosp'], ['Doctors', '/admin/doctors', 'doc'], ['Patients', '/admin/patients', 'users'], ['Appointments', '/admin/appointments', 'cal'], ['AI Activity', '/admin/ai', 'chat'], ['Analytics', '/admin/analytics', 'chart'], ['Audit', '/admin/audit', 'clip'], ['Ops Health', '/admin/ops', 'pulse']],
-  hospital_admin: [['Dashboard', '/hospital', 'dash'], ['Hospital', '/hospital/profile', 'hosp'], ['Doctors', '/hospital/doctors', 'doc'], ['Schedules', '/hospital/schedules', 'cal'], ['Appointments', '/hospital/appointments', 'clip'], ['Questionnaires', '/hospital/questionnaires', 'clip'], ['AI Activity', '/hospital/ai', 'chat'], ['Integrations', '/hospital/integrations', 'pulse'], ['Workflows', '/hospital/workflows', 'gear'], ['Notifications', '/hospital/notifications', 'bell'], ['Reviews', '/hospital/reviews', 'chat'], ['Activity', '/hospital/activity', 'clip'], ['Analytics', '/hospital/analytics', 'chart'], ['Audit', '/hospital/audit', 'shield']],
-  doctor: [['Dashboard', '/doctor', 'dash'], ['My Profile', '/doctor/profile', 'doc'], ['Today', '/doctor/today', 'cal'], ['Upcoming', '/doctor/upcoming', 'clip'], ['Calendar', '/doctor/calendar', 'cal'], ['Availability', '/doctor/availability', 'gear'], ['Appointments', '/doctor/appointments', 'inbox'], ['Questionnaires', '/doctor/questionnaires', 'clip'], ['Activity', '/doctor/activity', 'pulse']],
-  patient: [['Home', '/app', 'dash'], ['Book Visit', '/app/book', 'cal'], ['AI Assistant', '/app/assistant', 'chat'], ['Voice', '/app/voice', 'mic'], ['Find Doctors', '/app/doctors', 'doc'], ['Hospitals', '/app/hospitals', 'hosp'], ['Upcoming', '/app/upcoming', 'cal'], ['History', '/app/history', 'clip'], ['Questionnaires', '/app/questionnaires', 'clip'], ['Preferences', '/app/preferences', 'gear'], ['Profile', '/app/profile', 'users']],
+  platform_admin: [['Dashboard', '/admin', 'dash'], ['Applications', '/admin/applications', 'inbox'], ['Hospitals', '/admin/hospitals', 'hosp'], ['Doctors', '/admin/doctors', 'doc'], ['Patients', '/admin/patients', 'users'], ['Appointments', '/admin/appointments', 'cal'], ['Analytics', '/admin/analytics', 'chart'], ['Audit', '/admin/audit', 'clip'], ['Ops Health', '/admin/ops', 'pulse']],
+  hospital_admin: [['Dashboard', '/hospital', 'dash'], ['Hospital', '/hospital/profile', 'hosp'], ['Doctors', '/hospital/doctors', 'doc'], ['Schedules', '/hospital/schedules', 'cal'], ['Appointments', '/hospital/appointments', 'clip'], ['Questionnaires', '/hospital/questionnaires', 'clip'], ['Integrations', '/hospital/integrations', 'pulse'], ['Workflows', '/hospital/workflows', 'gear'], ['Notifications', '/hospital/notifications', 'bell'], ['Reviews', '/hospital/reviews', 'chat'], ['Activity', '/hospital/activity', 'clip'], ['Analytics', '/hospital/analytics', 'chart'], ['Audit', '/hospital/audit', 'shield']],
+  patient: [['Home', '/app', 'dash'], ['Book Visit', '/app/book', 'cal'], ['Find Doctors', '/app/doctors', 'doc'], ['Hospitals', '/app/hospitals', 'hosp'], ['Upcoming', '/app/upcoming', 'cal'], ['History', '/app/history', 'clip'], ['Questionnaires', '/app/questionnaires', 'clip'], ['Preferences', '/app/preferences', 'gear'], ['Profile', '/app/profile', 'users']],
 }
 
 const ROLE_META = {
@@ -61,7 +60,7 @@ export default function Shell({ children }) {
         ))}
       </nav>
       <div className="mt-auto rounded-2xl bg-gradient-to-br from-brand-soft to-apricot-soft p-3 text-xs text-ink-soft">
-        Need help booking? <Link to="/app/assistant" className="font-bold text-brand-deep">Ask the AI assistant →</Link>
+        Need help booking? <Link to="/app/book" className="font-bold text-brand-deep">Book a visit →</Link>
       </div>
       <div className="flex items-center gap-2.5 px-2 pt-3">
         <Avatar name={user?.full_name} size={34} seed={user?.id} />

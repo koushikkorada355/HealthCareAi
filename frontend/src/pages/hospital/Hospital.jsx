@@ -80,16 +80,16 @@ export function Dash() {
       ])
     }).catch(() => {})
   }, [hid])
-  const cards = [['Appointments', d?.appointments], ['Confirmed', d?.confirmed], ['Doctors', d?.doctors], ['AI-booked', d?.ai_booked], ['AI conversations', d?.ai_conversations], ['Cancelled', d?.cancelled], ['Open reconciliation', d?.reconciliation_open], ['EHR risk', d?.ehr_ops_failed]]
+  const cards = [['Appointments', d?.appointments], ['Confirmed', d?.confirmed], ['Doctors', d?.doctors], ['Cancelled', d?.cancelled], ['Open reconciliation', d?.reconciliation_open], ['EHR risk', d?.ehr_ops_failed]]
   if (hid === undefined) return <div className="p-8 text-ink-soft">Loading…</div>
   if (!hid) return <div><PageHead title="Hospital overview" sub="Get your hospital approved to unlock this dashboard." /><Card><Empty title="No hospital yet" sub="Register your hospital for System Admin review first." /><Link to="/hospitals/apply" className="btn-primary text-sm mt-3 inline-block">Register hospital →</Link></Card></div>
-  return <div><PageHead title="Hospital overview" sub="Bookings, capacity, questionnaires, AI-driven demand, integration risk." />
+  return <div><PageHead title="Hospital overview" sub="Bookings, capacity, questionnaires, integration risk." />
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{cards.map(([l, v]) => <Card key={l}><div className="text-xs font-bold text-ink-soft">{l.toUpperCase()}</div><div className="text-3xl font-bold">{v ?? '–'}</div></Card>)}</div>
     {ready && <Card className="mt-4"><div className="font-bold mb-2">Ready for next phase {ready.every(([, ok]) => ok) ? '✓' : `(${ready.filter(([, ok]) => ok).length}/${ready.length})`}</div><div className="grid sm:grid-cols-2 md:grid-cols-4 gap-2">{ready.map(([l, ok, extra]) => <div key={l} className="flex items-center gap-2 text-sm"><span>{ok ? '✅' : '⬜'}</span><span><b>{l}</b> <span className="text-ink-soft">· {extra}</span></span></div>)}</div>{!ready.every(([, ok]) => ok) && <div className="text-xs text-ink-soft mt-2">Finish: Hospital profile → Doctors → Schedules → Questionnaires → Workflows → Integration.</div>}</Card>}
     {Number(d?.reconciliation_open) > 0 && <Card className="mt-4 !border-red-200"><b className="text-crit">{d.reconciliation_open} reconciliation(s) need attention.</b> <Link to="/hospital/integrations" className="text-teal font-semibold text-sm ml-2">Open integration log →</Link></Card>}
     <div className="grid md:grid-cols-2 gap-4 mt-4">
       <Card><div className="font-bold mb-2">EHR risk</div><div className="text-sm">Failed/unknown ops: <b>{d?.ehr_ops_failed ?? 0}</b></div><div className="text-sm">Questionnaires pending: <b>{d?.questionnaires_pending ?? 0}</b></div></Card>
-      <Card><div className="font-bold mb-2">Shortcuts</div><div className="flex flex-wrap gap-2 text-sm"><Link to="/hospital/doctors" className="btn-ghost">Doctors</Link><Link to="/hospital/appointments" className="btn-ghost">Appointments</Link><Link to="/hospital/questionnaires" className="btn-ghost">Questionnaires</Link><Link to="/hospital/ai" className="btn-ghost">AI activity</Link></div></Card>
+      <Card><div className="font-bold mb-2">Shortcuts</div><div className="flex flex-wrap gap-2 text-sm"><Link to="/hospital/doctors" className="btn-ghost">Doctors</Link><Link to="/hospital/appointments" className="btn-ghost">Appointments</Link><Link to="/hospital/questionnaires" className="btn-ghost">Questionnaires</Link></div></Card>
     </div></div>
 }
 export function Doctors() {
@@ -240,30 +240,6 @@ function QRow({ q, reload, setMsg, onEdit }) {
   const [resp, setResp] = useState(null)
   useEffect(() => { api(`/questionnaire-responses?questionnaire_id=${q.id}`).then(r => setResp(r.length)).catch(() => {}) }, [q.id])
   return <Card className="mb-3"><div className="flex flex-wrap items-center gap-2"><div className="font-bold flex-1">{q.title} <span className="text-xs text-ink-faint">· {q.category} · {q.schema?.length || 0} questions · {resp ?? '—'} responses</span></div><Pill value={q.is_active ? 'active' : 'inactive'} /><button type="button" onClick={onEdit} className="btn-ghost text-xs">Edit</button><button type="button" className="btn-ghost text-xs" onClick={async () => { await api(`/questionnaires/${q.id}`, { method: 'PATCH', body: { is_active: !q.is_active } }); setMsg(q.is_active ? 'Deactivated.' : 'Activated.'); reload() }}>{q.is_active ? 'Deactivate' : 'Activate'}</button><button type="button" className="text-crit text-xs font-bold" onClick={async () => { if (!window.confirm(`Delete ${q.title}? Blocked while responses exist.`)) return; try { await api(`/questionnaires/${q.id}`, { method: 'DELETE' }); setMsg('Deleted.'); reload() } catch (e) { setMsg(`Could not delete: ${e.message}`) } }}>Delete</button></div><pre className="text-xs bg-slate-50 rounded-xl p-2 mt-2 overflow-auto">{JSON.stringify(q.schema, null, 1).slice(0, 600)}</pre></Card>
-}
-export function AIActivity() {
-  const [rows, setRows] = useState([]); const [execs, setExecs] = useState([]); const [open, setOpen] = useState(null); const [detail, setDetail] = useState(null)
-  useEffect(() => { api('/ai/conversations').then(setRows).catch(() => {}); api('/mcp/executions').then(setExecs).catch(() => {}) }, [])
-  const toggle = async (c) => {
-    if (open === c.id) { setOpen(null); setDetail(null); return }
-    setOpen(c.id); setDetail(null)
-    try { setDetail(await api(`/ai/conversations/${c.id}`)) } catch { setDetail({ messages: [], capabilities: [], error: 'Could not load conversation.' }) }
-  }
-  return <div><PageHead title="AI activity" sub="Conversations + every capability execution (never direct DB/EHR). Click a conversation to inspect what the AI did." />
-    <div className="grid md:grid-cols-2 gap-4">
-      <Card><div className="font-bold mb-2">Conversations</div>{rows.map(c => (
-        <div key={c.id} className="border-t border-slate-100">
-          <button type="button" onClick={() => toggle(c)} className="flex w-full justify-between py-2 text-sm text-left hover:text-brand-deep"><span>#{c.id} · {c.channel} · {c.messages} msgs · <code>{c.correlation_id}</code></span><span>{open === c.id ? '▾' : '▸'}</span></button>
-          {open === c.id && <div className="mb-2 rounded-xl bg-slate-50 p-3">
-            {!detail ? <div className="skeleton h-10 rounded-lg" /> : detail.error ? <div className="text-sm text-crit">{detail.error}</div> : <>
-              {detail.messages?.slice(-8).map((m, i) => <div key={i} className={`mb-1.5 max-w-[95%] rounded-xl px-3 py-1.5 text-xs ${m.role === 'user' ? 'ml-auto bg-brand text-white' : 'bg-white border border-slate-200'}`}>{m.content?.slice(0, 300)}</div>)}
-              {!!detail.capabilities?.length && <div className="mt-2 text-xs font-bold text-ink-soft">CAPABILITIES USED</div>}
-              {detail.capabilities?.map((x, i) => <div key={i} className="flex justify-between text-xs py-1 border-t border-slate-200"><code>{x.name}</code><Pill value={x.status} /></div>)}
-            </>}
-          </div>}
-        </div>))}{!rows.length && <Empty title="No conversations yet" />}</Card>
-      <Card><div className="font-bold mb-2">Capability executions</div>{execs.slice(0, 30).map(e => <div key={e.id} className="text-sm py-1.5 border-t border-slate-100 flex justify-between"><span><code>{e.name}</code></span><Pill value={e.status} /></div>)}</Card>
-    </div></div>
 }
 export function Integrations() {
   const [ops, setOps] = useState([]); const [conns, setConns] = useState([]); const [recon, setRecon] = useState([]); const [msg, setMsg] = useState(''); const [edit, setEdit] = useState({})

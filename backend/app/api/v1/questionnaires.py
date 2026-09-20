@@ -98,8 +98,6 @@ def create_r(body: dict, db: Session = Depends(get_db), u=Depends(get_current_us
 
 @router.post("/questionnaire-responses/{rid}/submit")
 def submit_r(rid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
-    from ...mcp.registry import invoke
-    import asyncio
     r = db.query(models.QuestionnaireResponse).filter(models.QuestionnaireResponse.id==rid).first()
     if not r: raise HTTPException(404)
     r.answers_json = json.dumps(body.get("answers",{})); r.status="completed"; r.collected_via=body.get("via","web"); db.commit()
