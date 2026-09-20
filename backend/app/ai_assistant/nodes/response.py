@@ -23,6 +23,9 @@ _DENIAL_PATTERNS = (
     "don't have access", "do not have access", "no access to",
     "cannot access", "can't access", "cant access", "couldn't access",
     "unable to book", "unable to schedule", "unable to check",
+    # Only flagged when no tool ran (tool_ok False) — genuine empty-slot
+    # results have tool_ok True and keep their honest wording.
+    "no current availability", "no availability",
 )
 
 _SPECULATIVE = (
