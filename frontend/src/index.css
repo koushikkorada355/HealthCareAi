@@ -41,3 +41,20 @@ body { @apply bg-canvas text-ink font-sans antialiased; }
 .dot { width: 7px; height: 7px; border-radius: 9999px; background: #8CA0B3; animation: blink 1s infinite; }
 .dot:nth-child(2) { animation-delay: .15s; } .dot:nth-child(3) { animation-delay: .3s; }
 @keyframes blink { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
+
+/* assistant markdown bubbles */
+/* assistant markdown bubbles */
+.md-bubble p { margin: 0.25rem 0; }
+.md-bubble p:first-child { margin-top: 0; }
+.md-bubble p:last-child { margin-bottom: 0; }
+.md-bubble ul, .md-bubble ol { margin: 0.25rem 0; padding-left: 1.1rem; }
+.md-bubble li { margin: 0.1rem 0; }
+.md-bubble li::marker { color: #1E6FF5; font-weight: 700; }
+.md-bubble strong { font-weight: 700; }
+.md-bubble code { background: rgba(30, 111, 245, 0.1); border-radius: 4px; padding: 0 4px; font-size: 0.85em; }
+/* prominent chat scrollbars */
+.chat-scroll { scrollbar-width: auto; scrollbar-color: #1E6FF5 #E8EEF5; }
+.chat-scroll::-webkit-scrollbar { width: 12px; }
+.chat-scroll::-webkit-scrollbar-track { background: #E8EEF5; border-radius: 8px; }
+.chat-scroll::-webkit-scrollbar-thumb { background: #1E6FF5; border-radius: 8px; border: 2px solid #E8EEF5; }
+.chat-scroll::-webkit-scrollbar-thumb:hover { background: #0C2B6B; }

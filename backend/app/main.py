@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .db.base import Base
 from .db.session import engine
 from .core.config import settings
-from .api.v1 import auth, hospitals, doctors, scheduling, appointments, questionnaires, reviews, ops, notifications, workflows
+from .api.v1 import auth, hospitals, doctors, scheduling, appointments, questionnaires, reviews, ops, notifications, workflows, ai, mcp
 
 logger = logging.getLogger("careaccess")
 
@@ -14,6 +14,15 @@ logger = logging.getLogger("careaccess")
 async def lifespan(app: FastAPI):
     from . import models  # noqa: ensure registered
     Base.metadata.create_all(bind=engine)
+    # Additive lightweight migrations (idempotent, never block boot).
+    try:
+        from sqlalchemy import text as _text
+        with engine.begin() as _conn:
+            _conn.execute(_text(
+                "ALTER TABLE ai_messages ADD COLUMN IF NOT EXISTS "
+                "data_json TEXT DEFAULT ''"))
+    except Exception:
+        logger.exception("light migration failed")
     # Option A concurrency guard: overlapping-range exclusion (Postgres/Neon only,
     # idempotent, skipped on SQLite). Never blocks boot on failure.
     try:
@@ -43,5 +52,5 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True
 def health():
     return {"ok": True, "service": "backend"}
 
-for r in [auth.router, hospitals.router, doctors.router, scheduling.router, appointments.router, questionnaires.router, reviews.router, workflows.router, notifications.router, ops.router]:
+for r in [auth.router, hospitals.router, doctors.router, scheduling.router, appointments.router, questionnaires.router, reviews.router, workflows.router, notifications.router, ops.router, ai.router, mcp.router]:
     app.include_router(r, prefix="/api/v1")

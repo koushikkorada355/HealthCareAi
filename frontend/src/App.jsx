@@ -9,6 +9,7 @@ import HospitalDetail from './pages/patient/HospitalDetail.jsx'
 import { BookFind, BookSlots } from './pages/patient/Book.jsx'
 import BookConfirm from './pages/patient/BookConfirm.jsx'
 import { Upcoming, History, Detail, Questionnaires, QFill, Prefs, Profile } from './pages/patient/Appts.jsx'
+import Assistant from './pages/patient/Assistant.jsx'
 import { Dash as DocDash, ApptList, Calendar, Availability, ApptDetail, Profile as DocProfile, Questionnaires as DocQ, Activity as DocAct } from './pages/doctor/Doctor.jsx'
 import { Dash as HDash, Profile as HProfile, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, Integrations as HInt, Workflows as HWf, Notifications, Reviews as HRev, Activity as HAct, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
 import { Dash as ADash, Applications, ApplicationDetail, TablePage, Analytics as AAn, OpsHealth } from './pages/admin/Admin.jsx'
@@ -27,6 +28,7 @@ export default function App() {
 
       {/* patient */}
       <Route path="/app" element={<Require roles={['patient']}><Home /></Require>} />
+      <Route path="/app/assistant" element={<Require roles={['patient']}><Assistant /></Require>} />
       <Route path="/app/hospitals" element={<Require roles={['patient']}><Hospitals /></Require>} />
       <Route path="/app/hospitals/:id" element={<Require roles={['patient']}><HospitalDetail /></Require>} />
       <Route path="/app/doctors" element={<Require roles={['patient']}><Doctors /></Require>} />

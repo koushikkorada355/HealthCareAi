@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     GROK_BASE_URL: str = "https://api.x.ai/v1"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
+    # Primary LLM: Inception Labs Mercury (user provides key in .env)
+    INCEPTION_API_KEY: str = ""
+    INCEPTION_BASE_URL: str = "https://api.inceptionlabs.ai/v1"
+    INCEPTION_MODEL: str = "mercury-2.5"
+    # Fallback LLM: gpt-oss-120b via Groq
+    GROQ_API_KEY: str = ""
+    GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
+    LLM_TIMEOUT_S: int = 45
+    LLM_MAX_HOPS: int = 5
+    AI_SHORT_WINDOW: int = 5
     class Config:
         env_file = ".env"
         extra = "ignore"

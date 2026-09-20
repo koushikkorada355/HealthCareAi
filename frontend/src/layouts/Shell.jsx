@@ -24,7 +24,7 @@ const I = {
 const NAV = {
   platform_admin: [['Dashboard', '/admin', 'dash'], ['Applications', '/admin/applications', 'inbox'], ['Hospitals', '/admin/hospitals', 'hosp'], ['Doctors', '/admin/doctors', 'doc'], ['Patients', '/admin/patients', 'users'], ['Appointments', '/admin/appointments', 'cal'], ['Analytics', '/admin/analytics', 'chart'], ['Audit', '/admin/audit', 'clip'], ['Ops Health', '/admin/ops', 'pulse']],
   hospital_admin: [['Dashboard', '/hospital', 'dash'], ['Hospital', '/hospital/profile', 'hosp'], ['Doctors', '/hospital/doctors', 'doc'], ['Schedules', '/hospital/schedules', 'cal'], ['Appointments', '/hospital/appointments', 'clip'], ['Questionnaires', '/hospital/questionnaires', 'clip'], ['Integrations', '/hospital/integrations', 'pulse'], ['Workflows', '/hospital/workflows', 'gear'], ['Notifications', '/hospital/notifications', 'bell'], ['Reviews', '/hospital/reviews', 'chat'], ['Activity', '/hospital/activity', 'clip'], ['Analytics', '/hospital/analytics', 'chart'], ['Audit', '/hospital/audit', 'shield']],
-  patient: [['Home', '/app', 'dash'], ['Book Visit', '/app/book', 'cal'], ['Find Doctors', '/app/doctors', 'doc'], ['Hospitals', '/app/hospitals', 'hosp'], ['Upcoming', '/app/upcoming', 'cal'], ['History', '/app/history', 'clip'], ['Questionnaires', '/app/questionnaires', 'clip'], ['Preferences', '/app/preferences', 'gear'], ['Profile', '/app/profile', 'users']],
+  patient: [['Home', '/app', 'dash'], ['AI Assistant', '/app/assistant', 'chat', true], ['Book Visit', '/app/book', 'cal'], ['Find Doctors', '/app/doctors', 'doc'], ['Hospitals', '/app/hospitals', 'hosp'], ['Upcoming', '/app/upcoming', 'cal'], ['History', '/app/history', 'clip'], ['Questionnaires', '/app/questionnaires', 'clip'], ['Preferences', '/app/preferences', 'gear'], ['Profile', '/app/profile', 'users']],
 }
 
 const ROLE_META = {
@@ -55,8 +55,8 @@ export default function Shell({ children }) {
         </div>
       </Link>
       <nav className="flex flex-col gap-0.5 overflow-auto pr-1">
-        {links.map(([l, to, icon]) => (
-          <span key={to} onClick={onNav}><SideLink to={to}><span className="opacity-80">{I[icon] || I.dash}</span>{l}</SideLink></span>
+        {links.map(([l, to, icon, small]) => (
+          <span key={to} onClick={onNav}><SideLink to={to}><span className="opacity-80">{I[icon] || I.dash}</span><span className={small ? 'text-xs' : ''}>{l}</span></SideLink></span>
         ))}
       </nav>
       <div className="mt-auto rounded-2xl bg-gradient-to-br from-brand-soft to-apricot-soft p-3 text-xs text-ink-soft">

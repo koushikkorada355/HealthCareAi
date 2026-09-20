@@ -16,5 +16,9 @@ pytest==8.3.4
 pytest-asyncio==0.25.0
 respx==0.22.0
 anyio==4.7.0
-# NOTE: AI layer deleted — LLM deps removed. Re-add on fresh AI rebuild:
-# langchain-core, langchain-openai, langgraph, openai
+langchain-core==0.3.33
+langchain-openai==0.2.14
+langgraph==0.2.76
+openai==1.66.3
+psycopg[binary]==3.2.3
+langgraph-checkpoint-postgres==2.0.11
