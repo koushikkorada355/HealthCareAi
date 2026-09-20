@@ -124,7 +124,11 @@ CLASSIFY_SYSTEM = (
     "You are a medical admin intake classifier. Reply with JSON only: "
     '{"intent": "book|reschedule|cancel|lookup|questionnaire|admin_q|greeting|unsupported|unrelated|ambiguous", '
     '"category": "clinical|admin|unrelated|unsupported|ambiguous", '
-    '"specialty": "", "urgency": "routine|urgent", "dates": "", "safety_flag": ""}. '
+    '"specialty": "", "urgency": "routine|urgent", "dates": "", "safety_flag": "", '
+    '"repaired_specialty": "", "repaired_query": ""}. '
+    "Patients often mistype: map misspelled symptoms to the right specialty "
+    "(e.g. sholder->Orthopedics) in repaired_specialty, and restate the "
+    "request with corrected spelling in repaired_query (facts unchanged). "
     "Never diagnose. Never invent IDs."
 )
 
@@ -141,6 +145,8 @@ async def classify(text: str, history: str = "") -> dict:
         "urgency": str(data.get("urgency", "routine")),
         "dates": str(data.get("dates", "")),
         "safety_flag": str(data.get("safety_flag", "")),
+        "repaired_specialty": str(data.get("repaired_specialty", "")),
+        "repaired_query": str(data.get("repaired_query", "")),
         "powered_by": res.powered_by,
         "latency_ms": res.latency_ms,
     }
