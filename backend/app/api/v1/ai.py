@@ -1,7 +1,7 @@
-"""Patient AI chat: DB-persisted threads, fail-closed (503 when LLM down)."""
+"""Patient AI chat + voice STT proxy: DB-persisted threads, fail-closed (503 when LLM down)."""
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -102,3 +102,84 @@ def close_conversation(cid: int, db: Session = Depends(get_db), u=Depends(get_cu
     c.status = "closed"
     db.commit()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Voice v1: browser orb → Groq-hosted whisper-large-v3-turbo (open weights).
+# No local model, no telephone. Mercury stays the brain; this endpoint only
+# transcribes audio → text. TTS stays client-side speechSynthesis (no model).
+# Free tier: RPM 20 / RPD 2000 / ASH 7200s / ASD 28800s (Groq docs).
+# ---------------------------------------------------------------------------
+MAX_STT_BYTES = 10 * 1024 * 1024
+
+
+@router.post("/ai/stt")
+async def speech_to_text(audio: UploadFile = File(...), u=Depends(get_current_user)):
+    if u.role not in ("patient", "doctor", "hospital_admin", "platform_admin"):
+        raise HTTPException(403, "Voice not enabled for this role")
+    from ...core.config import settings
+    import logging as _logging
+
+    corr = new_corr()
+    log = _logging.getLogger("careaccess")
+    key = (settings.GROQ_API_KEY or "").strip()
+    if not key:
+        raise HTTPException(503, f"STT unavailable — configure GROQ_API_KEY ({corr})")
+    raw = await audio.read()
+    if not raw:
+        raise HTTPException(400, "Empty audio — tap orb and speak again")
+    if len(raw) > MAX_STT_BYTES:
+        raise HTTPException(400, "Audio too long — keep turns under ~60s")
+    # Never log audio bytes or transcripts (privacy: PHI stays out of logs).
+    log.info("stt request corr=%s bytes=%d ctype=%s", corr, len(raw), audio.content_type)
+    base = (settings.GROQ_BASE_URL or "https://api.groq.com/openai/v1").rstrip("/")
+    url = f"{base}/audio/transcriptions"
+    filename = audio.filename or "turn.webm"
+    ctype = audio.content_type or "audio/webm"
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {key}"},
+                files={"file": (filename, raw, ctype)},
+                data={"model": settings.STT_MODEL or "whisper-large-v3-turbo",
+                      "language": settings.STT_LANGUAGE or "en",
+                      "response_format": "json"},
+            )
+    except Exception as e:
+        log.warning("stt transport failed corr=%s err=%s", corr, type(e).__name__)
+        raise HTTPException(503, f"STT transport failed — retry ({corr})")
+    if resp.status_code == 429:
+        raise HTTPException(429, f"STT rate limited (free tier 20/min, 2000/day) — wait and retry ({corr})")
+    if resp.status_code >= 400:
+        try:
+            detail = (resp.text or "")[:300]
+        except Exception:
+            detail = ""
+        # Server log keeps the provider snippet; client gets actionable hint, never the key.
+        log.warning("stt provider error corr=%s status=%d body=%s", corr, resp.status_code, detail)
+        if resp.status_code in (401, 403):
+            raise HTTPException(503, f"STT key rejected (401/403) — check GROQ_API_KEY in .env, restart backend ({corr})")
+        if resp.status_code == 400:
+            raise HTTPException(503, f"STT rejected audio (400) — try a shorter turn ({corr})")
+        raise HTTPException(503, f"STT provider error {resp.status_code} — retry ({corr})")
+    try:
+        text = (resp.json().get("text") or "").strip()
+    except Exception:
+        text = ""
+    if not text:
+        raise HTTPException(400, f"No speech detected — try again ({corr})")
+    return {"text": text[:2000], "model": settings.STT_MODEL,
+            "provider": settings.STT_PROVIDER, "correlation_id": corr}
+
+
+@router.get("/ai/voice-config")
+def voice_config(u=Depends(get_current_user)):
+    from ...core.config import settings
+
+    return {"stt_provider": settings.STT_PROVIDER, "stt_model": settings.STT_MODEL,
+            "tts_provider": settings.TTS_PROVIDER,
+            "stt_configured": bool((settings.GROQ_API_KEY or "").strip()),
+            "brain_primary": settings.INCEPTION_MODEL, "brain_fallback": settings.GROQ_MODEL}

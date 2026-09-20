@@ -4,6 +4,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../../api/client.js'
 import { Avatar, Card, Empty, Pill } from '../../components/ui.jsx'
+import VoiceOrb from '../../components/VoiceOrb.jsx'
+import { isTTSSupported, loadVoices, speakReply, stopSpeaking } from '../../utils/speech.js'
 
 function Bubble({ role, content }) {
   const mine = role === 'user'
@@ -143,6 +145,13 @@ export default function Assistant() {
   const bottom = useRef(null)
   const lastSent = useRef({ text: '', at: 0 })
   const loadSeq = useRef(0)
+  // Voice v1: speak only voice-initiated replies (never surprise text users).
+  const [muted, setMuted] = useState(() => localStorage.getItem('voice_muted') === '1')
+  const expectVoiceReply = useRef(false)
+  const ttsSupported = isTTSSupported()
+  useEffect(() => { loadVoices().catch(() => {}) }, [])
+  useEffect(() => () => stopSpeaking(), [])
+  useEffect(() => { localStorage.setItem('voice_muted', muted ? '1' : '0'); if (muted) stopSpeaking() }, [muted])
 
   const loadThreads = () => api('/ai/conversations').then(setThreads).catch(() => {})
   const loadMsgs = (id) => {
@@ -171,9 +180,11 @@ export default function Assistant() {
   useEffect(() => { loadMsgs(cid) }, [cid])
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs, busy])
 
-  const send = async (text) => {
+  const send = async (text, opts = {}) => {
     const body = (text ?? input).trim()
     if (!body || busy) return
+    stopSpeaking() // barge-in: new turn cancels spoken reply
+    if (opts.viaVoice) expectVoiceReply.current = true
     // Dedup impatient repeats: same text within 30s reuses the in-flight turn.
     const now = Date.now()
     if (lastSent.current.text === body && now - lastSent.current.at < 30000) {
@@ -189,6 +200,10 @@ export default function Assistant() {
       if (!cid && r.conversation_id) setSp({ c: String(r.conversation_id) })
       // Card + options ride on the message itself — one timeline, survives reload.
       setMsgs(m => [...m, { role: 'assistant', content: r.reply, data: r.data || {} }])
+      if (expectVoiceReply.current && !muted && ttsSupported && r.reply) {
+        expectVoiceReply.current = false
+        speakReply(r.reply, { onerror: () => setErr('Voice playback failed — reply shown as text.') }).catch(() => {})
+      } else expectVoiceReply.current = false
       loadThreads()
     } catch (e) {
       setErr(e.message)
@@ -227,8 +242,13 @@ export default function Assistant() {
             {err && <Card className="border-crit/40"><div className="text-sm font-bold text-crit">{err.includes('503') || err.includes('unavailable') ? 'AI unavailable — add INCEPTION_API_KEY.' : err}</div><Link to="/app/book" className="btn-ghost text-xs mt-2 inline-block">Book manually →</Link></Card>}
             <div ref={bottom} />
           </div>
-          <div className="mt-2 flex gap-2">
-            <input className="input flex-1" placeholder="Type a message…" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={busy} aria-label="Message" />
+          <div className="mt-2 flex gap-2 items-center">
+            <VoiceOrb onTranscript={(t) => send(t, { viaVoice: true })} onError={setErr} busy={busy} disabled={busy} />
+            {ttsSupported && (
+              <button type="button" onClick={() => setMuted(m => !m)} title={muted ? 'Unmute voice replies' : 'Mute voice replies'}
+                className="btn-ghost text-sm !px-3" aria-label={muted ? 'Unmute' : 'Mute'}>{muted ? '🔇' : '🔊'}</button>
+            )}
+            <input className="input flex-1" placeholder="Type a message… or tap 🎙 to speak" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={busy} aria-label="Message" />
             <button type="button" disabled={busy || !input.trim()} onClick={() => send()} className="btn-primary text-sm">{busy ? '…' : 'Send'}</button>
           </div>
         </Card>

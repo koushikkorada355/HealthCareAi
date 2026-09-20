@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_S: int = 45
     LLM_MAX_HOPS: int = 5
     AI_SHORT_WINDOW: int = 5
+    # Voice (Phase 1): Mercury stays primary brain. STT via Groq-hosted
+    # whisper-large-v3-turbo (open weights, no local). TTS v1 = browser
+    # speechSynthesis (no model/key). No telephone.
+    STT_PROVIDER: str = "groq-whisper"
+    STT_MODEL: str = "whisper-large-v3-turbo"
+    STT_LANGUAGE: str = "en"
+    TTS_PROVIDER: str = "browser"
     class Config:
         env_file = ".env"
         extra = "ignore"
