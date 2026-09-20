@@ -28,7 +28,19 @@ async def run(state: dict) -> dict:
         tx_doc = tx.get("doctor_id") or tx.get("doctor_name") or tx.get("specialty")
         if not (cls.get("specialty") or tx_doc):
             missing.append("specialty_or_doctor")
-        if not (cls.get("dates") or tx.get("date_iso")):
+        # Slot/availability follow-ups ("give slots first", "show availability")
+        # with a known doctor must reach check_availability (defaults days=7).
+        # Blocking them on date_hint produced the "don't have access" denial.
+        import re as _re
+        _last_user = ""
+        for _m in reversed(state.get("messages", []) or []):
+            if isinstance(_m, dict) and _m.get("role") == "user":
+                _last_user = str(_m.get("content", ""))
+                break
+        _wants_slots = bool(_re.search(
+            r"\bslots?\b|\bavailab|\bopen\b|\bfirst\b|\bshow\b|\bcheck\b",
+            _last_user, _re.IGNORECASE))
+        if not (cls.get("dates") or tx.get("date_iso")) and not (_wants_slots and tx_doc):
             missing.append("date_hint")
     else:
         for f in _NEEDS.get(intent, []):

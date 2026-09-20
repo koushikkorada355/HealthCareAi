@@ -207,6 +207,9 @@ def _backfill(tool: str, args: dict, state: dict, norm: dict,
     if tool == "check_availability":
         if not _as_int(args.get("doctor_id")):
             did = tx.get("doctor_id") or 0
+            if not did and args.get("doctor_name"):
+                # Planner may pass the remembered name (prompt allows it).
+                tx = {**tx, "doctor_name": args.get("doctor_name")}
             if not did and len(candidates) == 1:
                 did = candidates[0]["doctor_id"]
             if not did:
@@ -225,10 +228,54 @@ def _backfill(tool: str, args: dict, state: dict, norm: dict,
                         elif did != c["doctor_id"]:
                             did = 0
                             break
+            if not did and lname:
+                # Candidates are window-limited (last 5 messages) — the search
+                # results with IDs may already be outside the window (conv 51).
+                # Resolve the remembered name directly against the DB.
+                try:
+                    rt = state.get("_runtime", {}) or {}
+                    db = rt.get("db")
+                    user = rt.get("user")
+                    if db is not None:
+                        from app.models import Doctor as _D
+                        q = db.query(_D).filter(_D.status == "active")
+                        hid = tx.get("hospital_id") or 0
+                        if not hid and tx.get("hospital_name"):
+                            from app.models import Hospital as _H
+                            h = db.query(_H).filter(
+                                _H.name == tx["hospital_name"]).first()
+                            if h:
+                                hid = h.id
+                        if hid:
+                            try:
+                                q = q.filter(_D.hospital_id == int(hid))
+                            except (TypeError, ValueError):
+                                pass
+                        # "Dr. Tom Becker" -> match "Tom Becker" / "Becker".
+                        needle = lname.replace("dr.", "").strip()
+                        row = q.filter(_D.name.ilike(f"%{needle}%")).first()
+                        if row is None and needle:
+                            for _part in reversed(needle.split()):
+                                if len(_part) >= 3:
+                                    row = q.filter(
+                                        _D.name.ilike(f"%{_part}%")).first()
+                                    if row:
+                                        break
+                        if row is not None:
+                            did = row.id
+                except Exception:
+                    pass
             if did:
                 args["doctor_id"] = did
         if not args.get("date") and norm.get("date_iso"):
             args["date"] = norm["date_iso"]
+        # "this week" normalizes to {"days": 7} with no date_iso — forward it
+        # so check_availability scans the coming week instead of defaulting.
+        if not args.get("days") and norm.get("days"):
+            try:
+                args["days"] = max(1, min(int(norm["days"]), 14))
+            except (TypeError, ValueError):
+                pass
         if not args.get("day_part"):
             tw = str(tx.get("time_window", "")).lower()
             if tw in ("morning", "afternoon", "evening"):

@@ -54,6 +54,10 @@ ROUTER_SYSTEM = (
     "repaired spelling instead of ending with no results. "
     "Booking a shown slot -> create_appointment (exact slot fields resolve "
     "automatically from verified availability; never invent times). "
+    "Availability follow-ups (slots/availability/open) with a known doctor "
+    "(name in entities/history) -> check_availability: pass doctor_id when "
+    "known, else pass doctor_name and the server resolves the ID — never "
+    "choose (c) just because the numeric ID is not in the prompt. "
     "Every step's required args must be fillable from request, entities, "
     "candidates, or a previous step's output — else choose (c)."
 )

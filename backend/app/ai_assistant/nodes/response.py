@@ -299,7 +299,11 @@ async def run(state: dict) -> dict:
         res = fix
     tool_ok = bool((state.get("tool_result") or {}).get("ok"))
     if not tool:
-        tool_ok = not bool(state.get("missing_tool") or state.get("scope_hint"))
+        # Clarification-pending turns have no tool yet — a "don't have
+        # access" reply there is a false denial (must ask the missing
+        # question instead), so mark not-ok to trigger the rewrite.
+        tool_ok = not bool(state.get("missing_tool") or state.get("scope_hint")
+                           or state.get("pending_clarification_fields"))
     booking_proven = (
         tool == "create_appointment" and bool((state.get("tool_result") or {}).get("ok"))
         and bool((data or {}).get("verified") or (data or {}).get("appointment_id")))
