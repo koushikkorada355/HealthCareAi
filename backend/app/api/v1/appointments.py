@@ -48,6 +48,9 @@ def list_a(db: Session = Depends(get_db), u=Depends(get_current_user), status: s
     if upcoming:
         now = datetime.now(timezone.utc)
         q = q.filter(models.Appointment.starts_at >= now)
+        # Terminal visits are history, not upcoming — otherwise an AI-cancelled
+        # future visit keeps showing under Upcoming with a grey pill.
+        q = q.filter(~models.Appointment.status.in_(("cancelled", "completed", "no_show", "failed")))
     rows = q.order_by(models.Appointment.starts_at.desc()).limit(200).all()
     out = []
     for a in rows:

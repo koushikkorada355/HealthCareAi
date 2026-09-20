@@ -8,8 +8,11 @@ function Row({ a }) {
 }
 export function Upcoming() {
   const [rows, setRows] = useState([])
+  // Defensive filter mirrors the backend: terminal visits are history even if
+  // their start time is still in the future (e.g. just cancelled via AI chat).
+  const live = rows.filter(a => !['cancelled', 'completed', 'no_show', 'failed'].includes(a.status))
   useEffect(() => { api('/appointments?upcoming=true').then(setRows).catch(() => {}) }, [])
-  return <div><PageHead title="Upcoming appointments" /><Card>{rows.length ? rows.map(a => <Row key={a.id} a={a} />) : <Empty title="No upcoming visits" sub="Book one from the AI assistant." />}</Card></div>
+  return <div><PageHead title="Upcoming appointments" /><Card>{live.length ? live.map(a => <Row key={a.id} a={a} />) : <Empty title="No upcoming visits" sub="Book one from the AI assistant." />}</Card></div>
 }
 export function History() {
   const [rows, setRows] = useState([])
