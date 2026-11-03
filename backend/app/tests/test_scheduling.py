@@ -1,4 +1,4 @@
-"""Unit: availability, slot validation, state transitions, idempotency keys, reconciliation logic."""
+"""Unit: availability, slot validation, state transitions, idempotency keys."""
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -63,7 +63,7 @@ def test_state_machine():
     assert can_transition("requested", "pending")
     assert can_transition("pending", "confirmed")
     assert not can_transition("cancelled", "confirmed")
-    assert can_transition("sync_pending", "reconciliation_required")
+    assert can_transition("confirmed", "rescheduled")
 
 def test_inactive_doctor_no_slots():
     db = _db(); h, d, c = _mk(db)

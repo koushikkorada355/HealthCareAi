@@ -30,8 +30,6 @@ def dash_platform(db: Session = Depends(get_db), u=Depends(get_current_user)):
         "patients": db.query(func.count(models.Patient.id)).scalar(),
         "appointments": db.query(func.count(models.Appointment.id)).scalar(),
         "confirmed": db.query(func.count(models.Appointment.id)).filter(models.Appointment.status=="confirmed").scalar(),
-        "reconciliation_open": db.query(func.count(models.ReconciliationRecord.id)).filter(models.ReconciliationRecord.status=="open").scalar(),
-        "unknown_outcome": db.query(func.count(models.IntegrationOperation.id)).filter(models.IntegrationOperation.status=="unknown_outcome").scalar(),
         "workflows_running": db.query(func.count(models.WorkflowExecution.id)).filter(models.WorkflowExecution.status=="running").scalar(),
         "audit_events": db.query(func.count(models.AuditEvent.id)).scalar(),
     }
@@ -47,8 +45,6 @@ def dash_hospital(hospital_id: int | None = None, db: Session = Depends(get_db),
         "cancelled": f(db.query(func.count(models.Appointment.id)).filter(models.Appointment.status=="cancelled")).scalar(),
         "doctors": db.query(func.count(models.Doctor.id)).filter(models.Doctor.hospital_id==hid).scalar(),
         "questionnaires_pending": db.query(func.count(models.QuestionnaireResponse.id)).filter(models.QuestionnaireResponse.status!="completed").scalar(),
-        "reconciliation_open": db.query(func.count(models.ReconciliationRecord.id)).filter(models.ReconciliationRecord.hospital_id==hid, models.ReconciliationRecord.status=="open").scalar(),
-        "ehr_ops_failed": db.query(func.count(models.IntegrationOperation.id)).filter(models.IntegrationOperation.hospital_id==hid, models.IntegrationOperation.status.in_(["failed","unknown_outcome"])).scalar(),
         "notifications": db.query(func.count(models.Notification.id)).filter(models.Notification.hospital_id==hid).scalar(),
     }
 
@@ -72,62 +68,7 @@ def dash_patient(db: Session = Depends(get_db), u=Depends(get_current_user)):
             "total": db.query(func.count(models.Appointment.id)).filter(models.Appointment.patient_id==u.patient_id).scalar(),
             "questionnaires_due": db.query(func.count(models.QuestionnaireResponse.id)).filter(models.QuestionnaireResponse.patient_id==u.patient_id, models.QuestionnaireResponse.status!="completed").scalar()}
 
-@router.get("/integrations/operations")
-def ehr_ops(status: str = "", db: Session = Depends(get_db), u=Depends(get_current_user)):
-    q = db.query(models.IntegrationOperation).order_by(models.IntegrationOperation.id.desc())
-    q = _scope(q, models.IntegrationOperation, u)
-    if status: q = q.filter(models.IntegrationOperation.status==status)
-    return [{"id":o.id,"kind":o.kind,"status":o.status,"ref_id":o.ref_id,"attempts":o.attempts,"error":o.error[:300],"correlation_id":o.correlation_id,"at":o.created_at.isoformat()} for o in q.limit(200).all()]
 
-@router.get("/integrations/connections")
-def conns(db: Session = Depends(get_db), u=Depends(get_current_user)):
-    q = db.query(models.HealthcareConnection).order_by(models.HealthcareConnection.id.desc())
-    q = _scope(q, models.HealthcareConnection, u)
-    return [{"id":c.id,"hospital_id":c.hospital_id,"vendor":c.vendor,"base_url":c.base_url,"status":c.status} for c in q.limit(100).all()]
-
-@router.patch("/integrations/connections/{cid}")
-def patch_conn(cid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
-    """Simple health-system settings edit (own hospital). No appointment ops here."""
-    c = db.query(models.HealthcareConnection).filter(models.HealthcareConnection.id==cid).first()
-    if not c: raise HTTPException(404)
-    if u.role=="hospital_admin" and c.hospital_id!=u.hospital_id: raise HTTPException(403)
-    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
-    for k in ("vendor", "base_url", "status"):
-        if k in body: setattr(c, k, body[k])
-    db.commit(); return {"ok": True, "id": c.id, "status": c.status}
-
-@router.post("/integrations/connections/{cid}/test")
-def test_conn(cid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
-    """Ping the configured base_url /health and record the result as status."""
-    import httpx
-    c = db.query(models.HealthcareConnection).filter(models.HealthcareConnection.id==cid).first()
-    if not c: raise HTTPException(404)
-    if u.role=="hospital_admin" and c.hospital_id!=u.hospital_id: raise HTTPException(403)
-    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
-    ok, detail = False, ""
-    try:
-        r = httpx.get(f"{(c.base_url or '').rstrip('/')}/health", timeout=8)
-        ok = r.status_code == 200; detail = r.text[:300]
-    except Exception as e:
-        detail = str(e)[:300]
-    c.status = "active" if ok else "error"; db.commit()
-    return {"ok": ok, "status": c.status, "detail": detail}
-
-@router.get("/reconciliation")
-def recon(status: str = "", db: Session = Depends(get_db), u=Depends(get_current_user)):
-    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
-    q = db.query(models.ReconciliationRecord).order_by(models.ReconciliationRecord.id.desc())
-    q = _scope(q, models.ReconciliationRecord, u)
-    if status: q = q.filter(models.ReconciliationRecord.status==status)
-    return [{"id":r.id,"appointment_id":r.appointment_id,"issue":r.issue,"status":r.status,"resolution":r.resolution,"correlation_id":r.correlation_id,"at":r.created_at.isoformat()} for r in q.limit(200).all()]
-
-@router.post("/reconciliation/{rid}/resolve")
-def resolve(rid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
-    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
-    r = db.query(models.ReconciliationRecord).filter(models.ReconciliationRecord.id==rid).first()
-    if not r: raise HTTPException(404)
-    r.status = body.get("status","resolved"); r.resolution = body.get("resolution",""); r.assignee = u.email; db.commit()
-    return {"ok": True}
 
 @router.get("/audit")
 def auditlog(db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -179,29 +120,29 @@ def activity(db: Session = Depends(get_db), u=Depends(get_current_user)):
 def analytics(db: Session = Depends(get_db), u=Depends(get_current_user)):
     if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
     by_status = db.query(models.Appointment.status, func.count(models.Appointment.id)).group_by(models.Appointment.status).all()
-    by_op = db.query(models.IntegrationOperation.status, func.count(models.IntegrationOperation.id)).group_by(models.IntegrationOperation.status).all()
-    return {"appointments_by_status": {k:v for k,v in by_status}, "ehr_ops": {k:v for k,v in by_op}}
+    return {"appointments_by_status": {k:v for k,v in by_status}}
 
 @router.get("/patients")
 def patients(db: Session = Depends(get_db), u=Depends(get_current_user), q: str = ""):
     if u.role not in ("platform_admin","hospital_admin","doctor"): raise HTTPException(403)
     query = db.query(models.Patient)
     if q: query = query.filter(models.Patient.full_name.ilike(f"%{q}%"))
-    return [{"id":p.id,"full_name":p.full_name,"email":p.email,"phone":p.phone,"external_patient_id":p.external_patient_id} for p in query.limit(100).all()]
+    return [{"id":p.id,"full_name":p.full_name,"email":p.email,"phone":p.phone} for p in query.limit(100).all()]
 
 @router.get("/users/me/context")
 def myctx(db: Session = Depends(get_db), u=Depends(get_current_user)):
-    import json
-    row = db.query(models.UserContextPref).filter(models.UserContextPref.user_id==u.id).first()
-    return {"prefs": json.loads(row.prefs) if row and row.prefs else {}}
+    from ...services import profile_svc as _svc
+    return _svc.get_prefs(db, user=u)
 
 @router.put("/users/me/context")
 def putctx(body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
     import json
-    row = db.query(models.UserContextPref).filter(models.UserContextPref.user_id==u.id).first()
-    if not row: row = models.UserContextPref(user_id=u.id, prefs="{}"); db.add(row); db.commit()
-    cur = json.loads(row.prefs or "{}"); cur.update(body.get("prefs", body)); row.prefs = json.dumps(cur); db.commit()
-    return {"prefs": cur}
+    from ...services import profile_svc as _svc
+    try:
+        prefs = body.get("prefs", body) if isinstance(body, dict) else {}
+        return _svc.update_prefs(db, {"prefs": prefs}, user=u)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 @router.get("/users/me/profile")
 def myprofile(db: Session = Depends(get_db), u=Depends(get_current_user)):

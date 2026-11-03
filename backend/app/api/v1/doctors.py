@@ -13,7 +13,7 @@ class DocIn(BaseModel):
     hospital_id: int; name: str; specialty_id: int | None = None; department_id: int | None = None
     qualifications: str = "MD"; experience_years: int = 5; languages: list = ["English"]
     consultation_types: list = ["in_person"]; duration_minutes: int = 30
-    external_provider_id: str = ""; email: str = ""
+    email: str = ""
 
 @router.get("/doctors")
 def list_d(db: Session = Depends(get_db), u=Depends(get_current_user), hospital_id: int | None = None, specialty: str = "", q: str = ""):
@@ -30,7 +30,7 @@ def list_d(db: Session = Depends(get_db), u=Depends(get_current_user), hospital_
         sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
         h = db.query(models.Hospital).filter(models.Hospital.id==d.hospital_id).first()
         _rc, _ra = doctor_review_stats(db, d.id)
-        out.append({"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","specialty_id":d.specialty_id,"department_id":d.department_id,"qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":_rc,"avg_rating":_ra,"external_provider_id":d.external_provider_id})
+        out.append({"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","specialty_id":d.specialty_id,"department_id":d.department_id,"qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":_rc,"avg_rating":_ra})
     return out
 
 @router.post("/doctors")
@@ -49,7 +49,7 @@ def create_d(b: DocIn, db: Session = Depends(get_db), u=Depends(get_current_user
     # Auto-assign Unsplash photo on create — never ask admin/doctor for an image.
     from ...utils.photos import doctor_photo_for
     photo_url = doctor_photo_for(f"{b.hospital_id}-{b.name}")
-    d = models.Doctor(hospital_id=b.hospital_id, name=b.name, specialty_id=b.specialty_id, department_id=b.department_id, qualifications=b.qualifications, experience_years=b.experience_years, languages=json.dumps(b.languages), consultation_types=json.dumps(b.consultation_types), duration_minutes=b.duration_minutes, photo_url=photo_url, status="invited", external_provider_id=b.external_provider_id or f"ext-prov-{b.hospital_id}-{b.name[:4]}")
+    d = models.Doctor(hospital_id=b.hospital_id, name=b.name, specialty_id=b.specialty_id, department_id=b.department_id, qualifications=b.qualifications, experience_years=b.experience_years, languages=json.dumps(b.languages), consultation_types=json.dumps(b.consultation_types), duration_minutes=b.duration_minutes, photo_url=photo_url, status="invited")
     db.add(d); db.commit(); db.refresh(d)
     lu.doctor_id = d.id; lu.hospital_id = b.hospital_id; db.commit()
     cal = models.Calendar(hospital_id=b.hospital_id, doctor_id=d.id, name="Main", is_active=True, working_hours=json.dumps({"mon":[["09:00","17:00"]],"tue":[["09:00","17:00"]],"wed":[["09:00","17:00"]],"thu":[["09:00","17:00"]],"fri":[["09:00","15:00"]]}))
@@ -87,7 +87,7 @@ def get_d(did: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
         next_slots = []
     from .reviews import doctor_review_stats
     _rcount, _ravg = doctor_review_stats(db, did)
-    return {"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":_rcount,"avg_rating":_ravg,"completed_visits":completed_visits,"upcoming_count":upcoming_count,"next_slots":next_slots,"external_provider_id":d.external_provider_id,"calendars":cals}
+    return {"id":d.id,"name":d.name,"hospital_id":d.hospital_id,"hospital_name":h.name if h else "","hospital_city":h.city if h else "","specialty":sp.name if sp else "","qualifications":d.qualifications,"experience_years":d.experience_years,"languages":d.languages,"consultation_types":d.consultation_types,"duration_minutes":d.duration_minutes,"status":d.status,"photo_url":d.photo_url,"rating":d.rating,"review_count":_rcount,"avg_rating":_ravg,"completed_visits":completed_visits,"upcoming_count":upcoming_count,"next_slots":next_slots,"calendars":cals}
 
 @router.patch("/doctors/{did}")
 def patch_d(did: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -110,7 +110,7 @@ def patch_d(did: int, body: dict, db: Session = Depends(get_db), u=Depends(get_c
             setattr(d, k, json.dumps(v) if k in ("languages", "consultation_types") else v)
         db.commit(); audit(db, "doctor.update.self", "doctor", did, d.hospital_id, u.id, {"fields": sorted(allowed)}, "")
         return {"ok": True}
-    for k in ("name","qualifications","experience_years","duration_minutes","status","external_provider_id"):
+    for k in ("name","qualifications","experience_years","duration_minutes","status"):
         if k in body: setattr(d, k, body[k])
     if "specialty_id" in body:
         sid = body["specialty_id"]

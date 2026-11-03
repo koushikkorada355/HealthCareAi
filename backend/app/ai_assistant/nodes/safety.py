@@ -1,24 +1,12 @@
-"""safety node: LLM verdict primary; deterministic urgent list only upgrades.
+"""safety node: purely LLM-driven verdict, no keyword/regex lists.
 
-Sets state['safety'] = {verdict: allow|deny|escalate, reason}. Never tools,
-never the final reply here.
+The LLM decides allow|deny|escalate in any language. Code only persists
+the verdict and routes — never overrides wording with hardcoded patterns.
+Fail-closed: LLM down raises (handled upstream as 503, no fabricated reply).
 """
 from __future__ import annotations
 
 import json
-import re
-
-_URGENT = re.compile(
-    r"chest\s*(pain|pressure|tight)|trouble\s*breath|can'?t\s*breath|uncontrolled\s*bleed|"
-    r"stroke|slurred\s*speech|suicid|kill\s*myself|overdose|severe\s*allergic|anaphylax",
-    re.IGNORECASE)
-_HUMAN = re.compile(r"\b(human|agent|person|someone real|call me|phone me)\b", re.IGNORECASE)
-_CLINICAL = re.compile(
-    r"\b(diagnos|prescrib|prescription|dosage|should i take|what (medicine|drug|pill)|"
-    r"change (my )?medication|treat my|is this cancer)\b", re.IGNORECASE)
-_ADMIN = re.compile(
-    r"\b(questionnaires?|forms?\b|slot|availability|available|book|booking|reschedul|cancel|"
-    r"appointment|reminder|hospital|doctor|visit|upcoming|pending)\b", re.IGNORECASE)
 
 
 async def run(state: dict) -> dict:
@@ -31,31 +19,17 @@ async def run(state: dict) -> dict:
             text = m.get("content", "")
             break
     verdict, reason = "allow", "ok"
+    res = await llm_mod.generate([{"role": "user", "content": text[:2000]}],
+                                 system=SAFETY_SYSTEM)
     try:
-        res = await llm_mod.generate([{"role": "user", "content": text[:2000]}],
-                                     system=SAFETY_SYSTEM)
-        try:
-            data = json.loads(res.content)
-        except Exception:
-            s, e = res.content.find("{"), res.content.rfind("}")
-            data = json.loads(res.content[s:e + 1]) if s >= 0 and e > s else {}
-        verdict = str(data.get("verdict", "allow"))
-        reason = str(data.get("reason", "ok"))
-        if verdict not in ("allow", "deny", "escalate"):
-            verdict = "allow"
+        data = json.loads(res.content)
     except Exception:
-        raise
-    if verdict == "allow":
-        if _URGENT.search(text or ""):
-            verdict, reason = "escalate", "urgent"
-        elif _HUMAN.search(text or ""):
-            verdict, reason = "escalate", "human_requested"
-        elif _CLINICAL.search(text or ""):
-            verdict, reason = "deny", "clinical"
-    elif verdict == "deny" and not _CLINICAL.search(text or "") and _ADMIN.search(text or ""):
-        # LLM over-labels admin work (questionnaires, scheduling) as clinical —
-        # product definition says these are administrative. Clinical phrasing keeps deny.
-        verdict, reason = "allow", "admin_override"
+        s, e = res.content.find("{"), res.content.rfind("}")
+        data = json.loads(res.content[s:e + 1]) if s >= 0 and e > s else {}
+    verdict = str(data.get("verdict", "allow"))
+    reason = str(data.get("reason", "ok"))
+    if verdict not in ("allow", "deny", "escalate"):
+        verdict = "allow"
     trace = [*state.get("trace", []), f"safety:{verdict}/{reason}"]
     return {"safety": {"verdict": verdict, "reason_category": reason}, "trace": trace}
 

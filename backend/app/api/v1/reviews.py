@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from ...db.session import get_db
 from ...core.deps import get_current_user
 from ... import models
-from ...services.helpers import audit
 
 router = APIRouter(tags=["reviews"])
 
@@ -31,20 +30,15 @@ class ReviewIn(BaseModel):
 
 @router.post("/reviews")
 def create_r(b: ReviewIn, db: Session = Depends(get_db), u=Depends(get_current_user)):
-    if u.role != "patient": raise HTTPException(403, "Only patients write reviews")
-    if b.target_type not in ("doctor", "hospital"): raise HTTPException(400, "target_type must be doctor|hospital")
-    if not (1 <= b.rating <= 5): raise HTTPException(400, "rating must be 1-5")
-    ap = db.query(models.Appointment).filter(models.Appointment.id == b.appointment_id).first()
-    if not ap: raise HTTPException(404, "Appointment not found")
-    if ap.patient_id != u.patient_id: raise HTTPException(403, "Not your appointment")
-    if ap.status != "completed": raise HTTPException(400, "Only completed visits can be reviewed")
-    if db.query(models.Review).filter(models.Review.appointment_id == ap.id, models.Review.target_type == b.target_type).first(): raise HTTPException(400, f"This visit already has a {b.target_type} review")
-    r = models.Review(target_type=b.target_type, doctor_id=ap.doctor_id if b.target_type == "doctor" else None,
-                      hospital_id=ap.hospital_id, appointment_id=ap.id, patient_id=ap.patient_id,
-                      rating=b.rating, title=b.title[:255], body=b.body[:5000], status="approved")
-    db.add(r); db.commit(); db.refresh(r)
-    audit(db, "review.create", "review", r.id, ap.hospital_id, u.id, {"rating": b.rating}, ap.correlation_id)
-    return {"id": r.id}
+    from ....services import reviews_svc as _svc
+    try:
+        return _svc.create_review(db, {"appointment_id": b.appointment_id, "target_type": b.target_type,
+                                       "rating": b.rating, "title": b.title, "body": b.body}, user=u)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        msg = str(e)
+        raise HTTPException(404 if "not found" in msg.lower() else 400, msg)
 
 
 def _serialize(r, db):

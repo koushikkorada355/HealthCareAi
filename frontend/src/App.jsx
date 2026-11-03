@@ -11,7 +11,7 @@ import BookConfirm from './pages/patient/BookConfirm.jsx'
 import { Upcoming, History, Detail, Questionnaires, QFill, Prefs, Profile } from './pages/patient/Appts.jsx'
 import Assistant from './pages/patient/Assistant.jsx'
 import { Dash as DocDash, ApptList, Calendar, Availability, ApptDetail, Profile as DocProfile, Questionnaires as DocQ, Activity as DocAct } from './pages/doctor/Doctor.jsx'
-import { Dash as HDash, Profile as HProfile, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, Integrations as HInt, Workflows as HWf, Notifications, Reviews as HRev, Activity as HAct, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
+import { Dash as HDash, Profile as HProfile, Doctors as HDocs, DoctorDetail, Schedules, Appointments as HAppts, Questionnaires as HQ, Workflows as HWf, Notifications, Reviews as HRev, Activity as HAct, Analytics as HAn, Audit as HAud } from './pages/hospital/Hospital.jsx'
 import { Dash as ADash, Applications, ApplicationDetail, TablePage, Analytics as AAn, OpsHealth } from './pages/admin/Admin.jsx'
 
 const isToday = (a) => new Date(a.starts_at).toDateString() === new Date().toDateString()
@@ -65,7 +65,6 @@ export default function App() {
       <Route path="/hospital/schedules" element={<Require roles={['hospital_admin']}><Schedules /></Require>} />
       <Route path="/hospital/appointments" element={<Require roles={['hospital_admin']}><HAppts /></Require>} />
       <Route path="/hospital/questionnaires" element={<Require roles={['hospital_admin']}><HQ /></Require>} />
-      <Route path="/hospital/integrations" element={<Require roles={['hospital_admin']}><HInt /></Require>} />
       <Route path="/hospital/workflows" element={<Require roles={['hospital_admin']}><HWf /></Require>} />
       <Route path="/hospital/notifications" element={<Require roles={['hospital_admin']}><Notifications /></Require>} />
       <Route path="/hospital/reviews" element={<Require roles={['hospital_admin']}><HRev /></Require>} />
@@ -77,10 +76,10 @@ export default function App() {
       <Route path="/admin" element={<Require roles={['platform_admin']}><ADash /></Require>} />
       <Route path="/admin/applications" element={<Require roles={['platform_admin']}><Applications /></Require>} />
       <Route path="/admin/applications/:id" element={<Require roles={['platform_admin']}><ApplicationDetail /></Require>} />
-      <Route path="/admin/hospitals" element={<Require roles={['platform_admin']}><TablePage title="Hospitals" path="/hospitals" cols={['id', 'name', 'status', 'city', 'ehr_vendor']} /></Require>} />
+      <Route path="/admin/hospitals" element={<Require roles={['platform_admin']}><TablePage title="Hospitals" path="/hospitals" cols={['id', 'name', 'status', 'city']} /></Require>} />
       <Route path="/admin/doctors" element={<Require roles={['platform_admin']}><TablePage title="Doctors" path="/doctors" cols={['id', 'name', 'specialty', 'hospital_name', 'status']} /></Require>} />
-      <Route path="/admin/patients" element={<Require roles={['platform_admin']}><TablePage title="Patients" path="/patients" cols={['id', 'full_name', 'email', 'external_patient_id']} /></Require>} />
-      <Route path="/admin/appointments" element={<Require roles={['platform_admin']}><TablePage title="Appointments" path="/appointments" cols={['id', 'status', 'starts_at', 'doctor_name', 'patient_name', 'integration_status']} /></Require>} />
+      <Route path="/admin/patients" element={<Require roles={['platform_admin']}><TablePage title="Patients" path="/patients" cols={['id', 'full_name', 'email']} /></Require>} />
+      <Route path="/admin/appointments" element={<Require roles={['platform_admin']}><TablePage title="Appointments" path="/appointments" cols={['id', 'status', 'starts_at', 'doctor_name', 'patient_name']} /></Require>} />
       <Route path="/admin/analytics" element={<Require roles={['platform_admin']}><AAn /></Require>} />
       <Route path="/admin/audit" element={<Require roles={['platform_admin']}><TablePage title="Audit log" path="/audit" cols={['id', 'action', 'entity', 'correlation_id']} /></Require>} />
       <Route path="/admin/ops" element={<Require roles={['platform_admin']}><OpsHealth /></Require>} />

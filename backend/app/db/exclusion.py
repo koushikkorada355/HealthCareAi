@@ -22,9 +22,7 @@ CONSTRAINT_NAME = "excl_doctor_no_overlap"
 ACTIVE_STATUSES = (
     "pending",
     "confirmed",
-    "sync_pending",
     "rescheduled",
-    "reconciliation_required",
 )
 
 CREATE_EXTENSION_SQL = "CREATE EXTENSION IF NOT EXISTS btree_gist;"
@@ -41,7 +39,7 @@ EXCLUDE USING gist (
     doctor_id WITH =,
     tstzrange(starts_at, ends_at) WITH &&
 )
-WHERE (status IN ('pending', 'confirmed', 'sync_pending', 'rescheduled', 'reconciliation_required'));
+WHERE (status IN ('pending', 'confirmed', 'rescheduled'));
 """
 
 FIND_OVERLAPS_SQL = """
@@ -52,8 +50,8 @@ JOIN appointments a2
   ON a1.doctor_id = a2.doctor_id
  AND a1.id < a2.id
  AND tstzrange(a1.starts_at, a1.ends_at) && tstzrange(a2.starts_at, a2.ends_at)
-WHERE a1.status IN ('pending', 'confirmed', 'sync_pending', 'rescheduled', 'reconciliation_required')
-  AND a2.status IN ('pending', 'confirmed', 'sync_pending', 'rescheduled', 'reconciliation_required')
+WHERE a1.status IN ('pending', 'confirmed', 'rescheduled')
+  AND a2.status IN ('pending', 'confirmed', 'rescheduled')
 LIMIT 50;
 """
 

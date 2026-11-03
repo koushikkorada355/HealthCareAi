@@ -4,72 +4,75 @@ from datetime import datetime, timezone
 from app.ai_assistant.utils.dates import normalize
 
 
-def test_normalize_relative_days():
+def test_normalize_global_entities():
+    from app.ai_assistant.utils.dates import normalize_global
     now = datetime(2026, 9, 20, 10, 0, tzinfo=timezone.utc)
-    assert normalize("book for tomorrow afternoon", now)["date_iso"] == "2026-09-21"
-    assert normalize("book for tomorrow afternoon", now)["day_part"] == "afternoon"
-    assert normalize("today morning", now)["date_iso"] == "2026-09-20"
-    assert normalize("20 september", now)["date_iso"] == "2026-09-20"
-    assert normalize("monday september 21st evening", now)["day_part"] == "evening"
-    assert normalize("this week", now)["days"] == 7
+    assert normalize("2026-09-21", now)["date_iso"] == "2026-09-21"
     assert normalize("hello there", now) == {}
+    assert normalize_global({"date_iso": "2026-09-21", "time_window": "afternoon"}, {})["day_part"] == "afternoon"
+    assert normalize_global({"days": 7}, {})["days"] == 7
+    assert normalize_global({}, {"date_iso": "2026-09-20"})["date_iso"] == "2026-09-20"
+    assert normalize_global({"time_range": {"start_hr": 9, "end_hr": 11}}, {})["time_range"] == {"start_hr": 9, "end_hr": 11}
 
 
-def test_backfill_availability_args():
-    from app.ai_assistant.nodes import tool_router as tr
+def test_generic_resolve_availability_args():
+    from app.ai_assistant import orchestration as orch
 
     state = {"messages": [], "context_refs": {"transactional": {
         "doctor_id": 3, "doctor_name": "Dr. Sara Khan",
-        "hospital_id": 1, "time_window": "afternoon"}}}
-    norm = {"date_iso": "2026-09-20", "days": 1}
-    out = tr._backfill("check_availability", {}, state, norm, [], state["context_refs"]["transactional"])
+        "hospital_id": 1, "date_iso": "2026-09-20", "days": 1,
+        "time_window": "afternoon"}}}
+    out, err = orch.resolve_args("check_availability", {},
+                                 state, state["context_refs"]["transactional"])
+    assert err == ""
     assert out["doctor_id"] == 3
     assert out["date"] == "2026-09-20"
     assert out["day_part"] == "afternoon"
 
 
-def test_backfill_single_candidate():
-    from app.ai_assistant.nodes import tool_router as tr
+def test_generic_resolve_from_history_candidate():
+    from app.ai_assistant import orchestration as orch
 
-    cands = [{"doctor_id": 1, "doctor_name": "Dr. Maya Rao", "hospital_id": 1, "hospital_name": "City"}]
-    out = tr._backfill("check_availability", {}, {"messages": []}, {"date_iso": "2026-09-21"}, cands, {})
+    msgs = [{"role": "system", "content": (
+        '{"doctors": [{"id": 1, "doctor_name": "Dr. Maya Rao", '
+        '"hospital_id": 1, "hospital_name": "City"}]}')}]
+    state = {"messages": msgs, "context_refs": {"transactional": {}}}
+    out, err = orch.resolve_args("check_availability", {"date": "2026-09-21"},
+                                 state, {})
+    assert err == ""
     assert out["doctor_id"] == 1
     assert out["date"] == "2026-09-21"
 
 
-def test_reply_violations():
+def test_reply_violations_structural_only():
     from app.ai_assistant.nodes.response import violations
 
-    assert violations("We are working to secure your slot.", True) != []
-    assert violations("Please contact CityCare directly.", True) != []
-    assert violations("Log into your patient portal.", True) != []
-    assert violations("You reported pain. Here are slots.", True) != []
-    assert violations("I don't have access to questionnaires.", False) != []
-    assert violations("Here are 3 open slots tomorrow afternoon.", True) == []
-    assert violations("I can't diagnose that — let me connect you.", True) == []
-    # False booking confirmations.
-    assert violations("Done — appointment #42 booked and verified.", True) != []
-    assert violations("Done — appointment #42 booked and verified.", True, True) == []
-    assert violations("Your visit is scheduled for Friday.", True) != []
-    # Text/card duplication.
-    assert violations("Dr. Sara Khan at 09:00 on 2026-09-21.", True, dup_hits=3) != []
-    assert violations("Here are your options:", True, dup_hits=1) == []
-    # Speculation only flagged when no data backs it.
-    assert violations("You could also explore other providers.", True, speculative=True) != []
-    assert violations("You could also explore other providers.", True, speculative=False) == []
-    # No live agent may ever be promised.
-    assert violations("I can connect you with a human assistant to help.", True) != []
-    assert violations("A team member will follow up shortly.", True) != []
-    assert violations("Logged as tracked request #12 for the care team.", True) == []
+    assert violations("Here are 3 open slots.", True) == []
+    assert violations("You reported pain. Here are slots.", True) == []
+    assert violations("We are working to secure your slot.", True) == []
+    # Cited id absent from tool data -> flagged (no word lists involved).
+    assert violations("Done appointment #42 booked and verified.", True) != []
+    assert violations("Done appointment #42 booked and verified.", True, True) == []
+    # Cited id present in verified output (escalation reference) -> fine.
+    assert violations("Logged as tracked request #12 for the care team.", True,
+                      data={"rec_id": 12}) == []
+    assert violations("Appointment #11 confirmed.", True,
+                      data={"appointment_id": 11, "verified": True},
+                      booking_proven=True) == []
 
 
 def test_new_tool_registered():
     from app.ai_assistant.mcp import adapter
 
     assert "list_my_questionnaires" in adapter.known_tools()
-    assert len(adapter.known_tools()) == 23
-    coerced, err = adapter.validate("list_my_questionnaires", {})
-    assert err == "" and coerced == {}
+    assert len(adapter.known_tools()) == 34
+    for t in ("find_next_available", "get_hospital_info", "list_specialties",
+              "list_departments", "list_appointment_types",
+              "get_appointment_details", "submit_review", "get_my_profile",
+              "update_my_profile", "get_my_dashboard", "list_questionnaires"):
+        assert t in adapter.known_tools()
+    coerced, err = adapter.validate("list_my_questionnaires", {"patient_id": "7"})
+    assert err == "" and coerced == {"patient_id": 7}
 
 
 def test_global_search_exclusion():
@@ -140,7 +143,7 @@ async def test_router_consumes_stored_plan_without_llm(monkeypatch):
     assert out["selected_tool"] == "search_doctors"
     assert out["tool_args"]["specialty"] == "Cardiology"
     assert out["plan_steps"] == []
-    assert "router:plan:search_doctors" in out["trace"]
+    assert "router:search_doctors" in out["trace"]
 
 
 async def test_router_unavailable_path(monkeypatch):
@@ -199,7 +202,8 @@ def test_card_actions_global():
     assert "Dr. Sara Khan" in slots["items"][0]["actions"][0]["text"]
     appts = _card("list_my_appointments", {"appointments": [{"id": 11}]})
     labels = [a["label"] for a in appts["items"][0]["actions"]]
-    assert labels == ["Details"]
+    assert labels[0] == "Details"
+    assert "Cancel" in labels  # cancel needs approval but is still suggested
     assert _card("get_reviews", {"reviews": [{"rating": 5}]})["items"]
 
 
@@ -213,7 +217,7 @@ def test_input_options_global():
     date_o = _options({"safety": {"verdict": "allow"},
                        "pending_clarification_fields": ["date_hint"],
                        "context_refs": {"transactional": {}}})
-    assert [o["label"] for o in date_o] == ["Today", "Tomorrow", "This week"]
+    assert date_o == []
     doc_o = _options(
         {"safety": {"verdict": "allow"},
          "pending_clarification_fields": ["specialty_or_doctor"],
@@ -225,8 +229,8 @@ def test_input_options_global():
                      "pending_clarification_fields": []}) == []
 
 
-def test_resolve_slot_matching():
-    from app.ai_assistant.nodes.tool_router import _resolve_slot
+def test_generic_verified_slot_pick():
+    from app.ai_assistant.mcp import registry as reg
 
     slots = [
         {"doctor_id": 3, "calendar_id": 7, "starts_at": "2026-09-21T09:00:00+00:00",
@@ -236,12 +240,11 @@ def test_resolve_slot_matching():
         {"doctor_id": 5, "calendar_id": 9, "starts_at": "2026-09-21T09:00:00+00:00",
          "ends_at": "2026-09-21T09:30:00+00:00"},
     ]
-    state = {"step_outputs": [{"tool": "check_availability",
-                               "data": {"doctor_id": 3, "slots": slots}}]}
-    hit = _resolve_slot(state, {"date_iso": "2026-09-21", "day_part": "afternoon"}, 3)
+    hit = reg.pick_verified_slot(slots, doctor_id=3, date_iso="2026-09-21",
+                                 start_hr=12, end_hr=17)
     assert hit["starts_at"] == "2026-09-21T15:00:00+00:00"
-    assert _resolve_slot(state, {"date_iso": "2026-09-22"}, 3) == {}
-    assert _resolve_slot(state, {}, 0)["doctor_id"] == 3
+    assert reg.pick_verified_slot(slots, doctor_id=3, date_iso="2026-09-22") == {}
+    assert reg.pick_verified_slot(slots)["doctor_id"] == 3
 
 
 def test_dup_counter():
@@ -250,6 +253,5 @@ def test_dup_counter():
     card = {"card": "slots", "items": [
         {"doctor_name": "Dr. Sara Khan", "starts_at": "2026-09-21T09:00:00+00:00",
          "ends_at": "2026-09-21T09:30:00+00:00"}]}
-    assert _dup_count("Dr. Sara Khan at 9:00 AM on 2026-09-21.", card) >= 3
-    assert _dup_count("Here are your options below.", card) == 0
+    assert _dup_count("anything", card) == 0
     assert _dup_count("Anything", {}) == 0

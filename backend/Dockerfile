@@ -6,7 +6,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY pytest.ini ./pytest.ini
-COPY mock_ehr_app.py ./mock_ehr_app.py
 COPY start_combined.sh ./start_combined.sh
 RUN chmod +x ./start_combined.sh
 EXPOSE 8000

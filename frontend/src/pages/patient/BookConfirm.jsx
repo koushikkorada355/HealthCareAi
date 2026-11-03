@@ -9,7 +9,7 @@ const MODES = [
   { id: 'phone', label: 'Phone call' },
 ]
 
-const CHAIN = ['Requested', 'EHR write', 'External verification', 'State sync', 'Confirmed + notified']
+const CHAIN = ['Requested', 'Validated', 'Confirmed + notified']
 
 function fmtSlot(s) {
   if (!s?.starts_at) return '—'
@@ -97,8 +97,8 @@ export default function BookConfirm() {
     {!slot ? (
       <Card className="mt-4"><Empty title="No slot selected" sub="Go back and pick a time first — nothing is booked." /><Link to={`/app/book/${id}`} className="btn-primary text-sm mt-3 inline-block">Pick a slot →</Link></Card>
     ) : done ? (
-      <Card className="mt-4"><div className="font-display text-lg font-semibold text-emerald-800">✓ Confirmed — verified against the health system</div>
-        <div className="mt-1 text-sm">Appointment <b>#{done.appointment_id}</b> · status <b>{done.status}</b> · {done.verified ? 'external record matched' : 'verification pending'} · ref <code>{done.correlation_id}</code></div>
+      <Card className="mt-4"><div className="font-display text-lg font-semibold text-emerald-800">✓ Confirmed</div>
+        <div className="mt-1 text-sm">Appointment <b>#{done.appointment_id}</b> · status <b>{done.status}</b> · ref <code>{done.correlation_id}</code></div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Link to={`/app/appointments/${done.appointment_id}`} className="btn-primary text-sm">Open appointment →</Link>
           <Link to="/app/questionnaires" className="btn-ghost text-sm">Pre-visit questionnaire</Link>
@@ -123,7 +123,7 @@ export default function BookConfirm() {
           </div>
         </div>
         <div className="mt-3">
-          <div className="text-[11px] font-bold tracking-wider text-ink-faint">WHILE YOU CONFIRM — REQUESTED → EHR → VERIFIED → SYNCED → CONFIRMED</div>
+          <div className="text-[11px] font-bold tracking-wider text-ink-faint">WHILE YOU CONFIRM — REQUESTED → VALIDATED → CONFIRMED</div>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">{CHAIN.map((c, i) => <span key={c} className={`rounded-full px-3 py-1 text-xs font-bold ${prog >= i ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-ink-soft'}`}>{prog >= i ? '● ' : '○ '}{c}</span>)}</div>
         </div>
         {formErr && <div className="mt-3 rounded-xl bg-red-50 p-2.5 text-sm text-red-700">{formErr}</div>}

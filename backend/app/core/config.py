@@ -6,8 +6,6 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "change-me-to-a-long-random-secret-min-32-chars"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
-    MOCK_EHR_URL: str = "http://mock-ehr:8001"
-    MOCK_EHR_API_KEY: str = "mock-ehr-dev-key"
     BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
     ENVIRONMENT: str = "development"
     SEED_ON_STARTUP: bool = True
@@ -29,6 +27,17 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_S: int = 45
     LLM_MAX_HOPS: int = 5
     AI_SHORT_WINDOW: int = 5
+    # Router tuning (env-overridable, no code constants):
+    AI_MAX_DAYS: int = 14
+    AI_CANDIDATE_KEEP: int = 12
+    AI_TOOL_MSG_KEEP: int = 3
+    AI_SLOT_SCAN: int = 200
+    AI_STEP_KEEP: int = 4
+    AI_CARD_PAGE: int = 10
+    # Day-part windows as "start-end" hours (global default, overridable per deploy).
+    AI_DAY_MORNING: str = "5-12"
+    AI_DAY_AFTERNOON: str = "12-17"
+    AI_DAY_EVENING: str = "17-22"
     # Voice (Phase 1): Mercury stays primary brain. STT via Groq-hosted
     # whisper-large-v3-turbo (open weights, no local). TTS v1 = browser
     # speechSynthesis (no model/key). No telephone.

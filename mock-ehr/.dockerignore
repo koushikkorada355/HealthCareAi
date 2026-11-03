@@ -1,6 +1,0 @@
-# ---------- mock-ehr ----------
-__pycache__/
-*.pyc
-.env
-venv/
-.venv/

@@ -1,10 +1,19 @@
-"""Assistant service: runs the 11-node graph with request-scoped runtime."""
+"""Assistant service: runs the graph with request-scoped runtime.
+
+State persistence across turns uses a LangGraph checkpointer (Postgres when
+available, in-memory fallback) keyed by thread_id == conversation id, so
+multi-step plans, pending approvals and execution state resume correctly.
+Falls back to a stateless graph if no checkpointer is available.
+"""
 from __future__ import annotations
+
+
+_GRAPH_BY_CHECKPOINTER: dict = {}
 
 
 async def run_turn(db, *, user, conversation_id: int | None, text: str,
                    channel: str = "web", corr: str = "") -> dict:
-    from app.ai_assistant.graph.graph import get_graph
+    from app.ai_assistant.graph.graph import build_graph
     from app.ai_assistant.services.llm import AINotAvailable
     from app.core.config import settings
     from app.models import AIConversation
@@ -20,7 +29,7 @@ async def run_turn(db, *, user, conversation_id: int | None, text: str,
                 and conv.hospital_id and getattr(user, "hospital_id", None)
                 and int(conv.hospital_id) != int(user.hospital_id)):
             raise PermissionError("Cross-tenant denied")
-    graph = get_graph()
+    graph = _get_graph()
     state = {"channel": channel, "_runtime": {
         "db": db, "user": user, "text": text,
         "conversation": conv, "corr": corr,
@@ -32,3 +41,26 @@ async def run_turn(db, *, user, conversation_id: int | None, text: str,
     return {"reply": out.get("reply", ""), "conversation_id": out.get("conversation_id"),
             "correlation_id": corr, "trace": out.get("trace", []),
             "data": out.get("data", {}), "powered_by": out.get("powered_by", "")}
+
+
+def _get_graph():
+    """Cached graph bound to the best available checkpointer."""
+    from app.ai_assistant.graph.graph import build_graph
+
+    try:
+        from app.ai_assistant.checkpointer import get_checkpointer
+        checkpointer, _needs_setup = get_checkpointer()
+        if _needs_setup:
+            try:
+                checkpointer.setup()
+            except Exception:
+                checkpointer = None
+        key = type(checkpointer).__name__ if checkpointer is not None else "none"
+    except Exception:
+        checkpointer, key = None, "none"
+    if key not in _GRAPH_BY_CHECKPOINTER:
+        try:
+            _GRAPH_BY_CHECKPOINTER[key] = build_graph(checkpointer=checkpointer)
+        except Exception:
+            _GRAPH_BY_CHECKPOINTER[key] = build_graph()
+    return _GRAPH_BY_CHECKPOINTER[key]

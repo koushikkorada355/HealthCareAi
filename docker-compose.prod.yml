@@ -2,7 +2,7 @@
 # Production overlay — use:  docker compose -f docker-compose.yml \
 #                                     -f docker-compose.prod.yml up --build -d
 # Changes vs base: no seed on boot, production env flag, no dev ports for
-# postgres/mock-ehr (internal network only).
+# postgres (internal network only).
 # ============================================================================
 include:
   - docker-compose.yml
@@ -14,7 +14,4 @@ services:
       ENVIRONMENT: production
 
   postgres:
-    ports: []
-
-  mock-ehr:
     ports: []

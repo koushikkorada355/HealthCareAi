@@ -19,14 +19,9 @@ function Bubble({ role, content }) {
   )
 }
 
-const PHASES = ['Understanding…', 'Searching…', 'Checking real availability…', 'Verifying…']
-
-function TypingBubble() {
-  const [pi, setPi] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => setPi(i => (i + 1) % PHASES.length), 4000)
-    return () => clearInterval(t)
-  }, [])
+function TypingBubble({ trace }) {
+  const last = (trace || []).slice(-1)[0] || ''
+  const label = last ? String(last).split(':')[0] : 'thinking'
   return (
     <div className="flex justify-start" aria-live="polite" aria-label="Assistant is typing">
       <div className="max-w-[85%] rounded-2xl px-4 py-2.5 bg-white border border-slate-100 shadow-sm">
@@ -35,7 +30,7 @@ function TypingBubble() {
             <span key={d} className="h-2 w-2 rounded-full bg-brand animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />
           ))}
         </div>
-        <div className="mt-1 text-xs text-ink-faint">{PHASES[pi]}</div>
+        <div className="mt-1 text-xs text-ink-faint">thinking{label ? ` · ${label}` : ''}…</div>
       </div>
     </div>
   )
@@ -65,16 +60,76 @@ function Options({ options, onTap, busy }) {
   )
 }
 
+function fmtDT(iso, opts) {
+  try {
+    return new Intl.DateTimeFormat(undefined, opts).format(new Date(iso))
+  } catch { return String(iso || '') }
+}
+
+function prettyKey(k) {
+  return String(k || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function isISODate(v) {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)
+}
+
+function FieldValue({ v }) {
+  if (v == null || v === '') return null
+  if (isISODate(v)) return <span>{fmtDT(v, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+  if (Array.isArray(v)) {
+    const scalars = v.filter(x => ['string', 'number'].includes(typeof x))
+    if (!scalars.length) return null
+    return <span>{scalars.join(', ')}</span>
+  }
+  if (typeof v === 'object') return null
+  if (typeof v === 'boolean') return <span>{v ? 'Yes' : 'No'}</span>
+  return <span>{String(v)}</span>
+}
+
+// Fully LLM-driven renderer: kind/title/fields/actions all come from the
+// backend's validated UI schema. Renders ANY future tool output with zero
+// frontend changes — legacy `card` payloads use <Cards> below as fallback.
+function DynamicCard({ ui, onTap, busy }) {
+  if (!ui || !Array.isArray(ui.items) || !ui.items.length) return null
+  return (
+    <div className="mt-2">
+      {ui.title ? <div className="font-bold text-sm mb-2">{ui.title}</div> : null}
+      <div className="grid md:grid-cols-2 gap-3">
+        {(ui.items || []).map((it, i) => {
+          const rows = Object.entries(it || {}).filter(
+            ([k, v]) => k !== 'actions' && !k.startsWith('_') && v != null && v !== '' && typeof v !== 'object')
+          return (
+            <Card key={i} className="card-hover">
+              <div className="space-y-1 text-sm">
+                {rows.map(([k, v]) => (
+                  <div key={k} className="flex gap-2">
+                    <span className="text-ink-soft text-xs shrink-0 min-w-[92px]">{prettyKey(k)}</span>
+                    <span className="min-w-0"><FieldValue v={v} /></span>
+                  </div>
+                ))}
+              </div>
+              <Actions actions={it.actions} onTap={onTap} busy={busy} />
+            </Card>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function Cards({ data, onTap, busy }) {
   if (!data || !data.card) return null
+  // Generic dynamic renderer: any card kind renders from item fields.
+  // No hardcoded specialty/city/mode strings — all values come from data.
   if (data.card === 'doctors') return (
     <div className="grid md:grid-cols-2 gap-3 mt-2">
-      {data.items.map(d => (
+      {(data.items || []).map(d => (
         <Card key={d.id} className="card-hover flex gap-3">
           <Avatar name={d.name} size={48} seed={d.id} plain={false} />
           <div className="flex-1 min-w-0">
             <div className="font-bold leading-tight">{d.name}</div>
-            <div className="text-xs text-ink-soft">{d.specialty} · {d.hospital_name}</div>
+            <div className="text-xs text-ink-soft">{[d.specialty, d.hospital_name].filter(Boolean).join(' · ')}</div>
             <div className="mt-1 text-sm"><b>★ {d.avg_rating ?? 0}</b> <span className="text-ink-soft">({d.review_count ?? 0})</span></div>
             <Actions actions={d.actions} onTap={onTap} busy={busy} />
           </div>
@@ -82,19 +137,19 @@ function Cards({ data, onTap, busy }) {
     </div>)
   if (data.card === 'hospitals') return (
     <div className="grid md:grid-cols-2 gap-3 mt-2">
-      {data.items.map(h => (
+      {(data.items || []).map(h => (
         <Card key={h.id} className="card-hover">
           <div className="font-bold">{h.name}</div>
-          <div className="text-xs text-ink-soft">{h.city} · {h.doctor_count ?? 0} doctors · ★ {h.avg_rating ?? 0} ({h.review_count ?? 0})</div>
+          <div className="text-xs text-ink-soft">{[h.city, h.doctor_count != null ? `${h.doctor_count} doctors` : '', h.avg_rating != null ? `★ ${h.avg_rating} (${h.review_count ?? 0})` : ''].filter(Boolean).join(' · ')}</div>
           <Actions actions={h.actions} onTap={onTap} busy={busy} />
         </Card>))}
     </div>)
   if (data.card === 'slots') return (
     <div className="grid sm:grid-cols-2 gap-2 mt-2">
-      {data.items.map((s, i) => (
+      {(data.items || []).map((s, i) => (
         <Card key={i} className="!p-3 card-hover">
-          <div className="font-bold text-sm">📅 {new Date(s.starts_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-          <div className="text-xs text-ink-soft">{new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · in person</div>
+          <div className="font-bold text-sm">📅 {fmtDT(s.starts_at, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+          <div className="text-xs text-ink-soft">{fmtDT(s.ends_at, { hour: '2-digit', minute: '2-digit' })}{s.mode ? ` · ${s.mode}` : ''}</div>
           <Actions actions={s.actions} onTap={onTap} busy={busy} />
         </Card>
       ))}
@@ -216,7 +271,7 @@ export default function Assistant() {
         <Card className="!p-3 h-[calc(100dvh-66px)] md:h-[calc(100dvh-44px)] md:min-h-[540px] flex flex-col">
           <div className="px-1 pb-2">
             <div className="font-display text-[15px] font-semibold leading-tight">AI Assistant</div>
-            <div className="text-[11px] text-ink-soft leading-snug">Admin help with real availability — verified before confirmed.</div>
+            <div className="text-[11px] text-ink-soft leading-snug">Ask in any language — real availability, verified before confirmed.</div>
           </div>
           <button type="button" onClick={() => { setSp({}); setMsgs([]) }} className="btn-primary text-sm w-full">+ New chat</button>
           <div className="mt-3 space-y-1.5 flex-1 overflow-y-auto chat-scroll pr-1">
@@ -230,16 +285,17 @@ export default function Assistant() {
         </Card>
         <Card className="flex flex-col h-[calc(100dvh-66px)] md:h-[calc(100dvh-44px)] md:min-h-[540px] !rounded-none md:!rounded-2xl border-x-0 md:border-x">
           <div className="flex-1 space-y-3 overflow-y-auto chat-scroll pr-1">
-            {!msgs.length && !busy && <Empty title="Ask anything admin" sub="e.g. I need a shoulder doctor this week." />}
+            {!msgs.length && !busy && <Empty title="Ask anything admin" sub="Describe your need in any language — the assistant finds care and real slots." />}
             {msgs.map((m, i) => (
               <div key={m.id ?? `tmp-${i}`} className="space-y-1">
                 <Bubble role={m.role} content={m.content} />
-                {m.role === 'assistant' && m.data?.card && <Cards data={m.data} onTap={send} busy={busy} />}
+                {m.role === 'assistant' && m.data?.ui?.items?.length ? <DynamicCard ui={m.data.ui} onTap={send} busy={busy} />
+                  : m.role === 'assistant' && m.data?.card ? <Cards data={m.data} onTap={send} busy={busy} /> : null}
                 {m.role === 'assistant' && <Options options={m.data?.options} onTap={send} busy={busy} />}
               </div>
             ))}
             {busy && <TypingBubble />}
-            {err && <Card className="border-crit/40"><div className="text-sm font-bold text-crit">{err.includes('503') || err.includes('unavailable') ? 'AI unavailable — add INCEPTION_API_KEY.' : err}</div><Link to="/app/book" className="btn-ghost text-xs mt-2 inline-block">Book manually →</Link></Card>}
+            {err && <Card className="border-crit/40"><div className="text-sm font-bold text-crit">{err}</div><Link to="/app/book" className="btn-ghost text-xs mt-2 inline-block">Book manually →</Link></Card>}
             <div ref={bottom} />
           </div>
           <div className="mt-2 flex gap-2 items-center">
@@ -248,7 +304,7 @@ export default function Assistant() {
               <button type="button" onClick={() => setMuted(m => !m)} title={muted ? 'Unmute voice replies' : 'Mute voice replies'}
                 className="btn-ghost text-sm !px-3" aria-label={muted ? 'Unmute' : 'Mute'}>{muted ? '🔇' : '🔊'}</button>
             )}
-            <input className="input flex-1" placeholder="Type a message… or tap 🎙 to speak" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={busy} aria-label="Message" />
+            <input className="input flex-1" placeholder="Type in any language… or tap 🎙 to speak" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={busy} aria-label="Message" />
             <button type="button" disabled={busy || !input.trim()} onClick={() => send()} className="btn-primary text-sm">{busy ? '…' : 'Send'}</button>
           </div>
         </Card>

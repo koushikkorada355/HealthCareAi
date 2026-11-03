@@ -9,7 +9,6 @@ def ensure_defaults(db: Session, hospital_id=None):
         ("appointment.cancelled", "Cancellation notices", [{"type":"notify_patient"},{"type":"notify_doctor"}]),
         ("appointment.rescheduled", "Reschedule notices", [{"type":"notify_patient"},{"type":"notify_doctor"}]),
         ("questionnaire.completed", "Notify doctor of completion", [{"type":"notify_doctor"}]),
-        ("reconciliation.required", "Escalate to ops", [{"type":"escalate"}]),
         ("hospital.approved", "Welcome + setup checklist", [{"type":"notify_hospital"}]),
     ]
     for trig, name, steps in defaults:

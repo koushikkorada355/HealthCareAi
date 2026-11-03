@@ -1,88 +1,93 @@
-"""Deterministic date/window normalization (calendar truth, not LLM wording).
+"""Global date normalization: LLM-first, deterministic ISO fallback.
 
-Converts relative day references to ISO dates and day-part windows so the
-router always passes concrete args to check_availability.
+No hardcoded month/weekday/relative-day word lists. The LLM extracts
+{date_iso, days, day_part} in any language (see CLASSIFY_SYSTEM). This module
+only validates ISO output and parses explicit ISO datetimes so the router
+always passes concrete args to check_availability.
 """
 from __future__ import annotations
 
-import re
 from datetime import datetime, timedelta, timezone
 
-_MONTHS = {m: i + 1 for i, m in enumerate(
-    ["january", "february", "march", "april", "may", "june", "july",
-     "august", "september", "october", "november", "december"])}
-_MONTHS.update({m[:3]: i for m, i in _MONTHS.items()})
 
-_DAY_PARTS = {
-    "morning": "morning", "mornings": "morning", "am": "morning",
-    "afternoon": "afternoon", "afternoons": "afternoon", "afternon": "afternoon",
-    "evening": "evening", "evenings": "evening", "night": "evening", "pm": "evening",
-}
-
-_WEEKDAYS = {d: i for i, d in enumerate(
-    ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"])}
+def _coerce_days(v) -> int:
+    if v in (None, "", 0, "0", False):
+        return 0
+    try:
+        from app.core.config import settings
+        cap = int(getattr(settings, "AI_MAX_DAYS", 14))
+    except Exception:
+        cap = 14
+    try:
+        return max(1, min(int(v), cap))
+    except (TypeError, ValueError):
+        return 0
 
 
 def normalize(text: str, now: datetime | None = None) -> dict:
-    """Return {date_iso, days, day_part}. Empty dict when nothing found."""
+    """Sync fallback: parse explicit ISO dates only (no language rules).
+
+    Full natural-language understanding lives in the LLM classifier
+    (date_iso/days/time_window). This keeps calendar truth deterministic
+    without English regex lists. Existing callers pass classification dates
+    via `normalize_global`.
+    """
     now = now or datetime.now(timezone.utc)
-    t = (text or "").lower()
+    t = (text or "").strip()
+    if not t:
+        return {}
     out: dict = {}
-    for k, v in _DAY_PARTS.items():
-        if re.search(rf"\b{re.escape(k)}\b", t):
-            out["day_part"] = v
-            break
-    if re.search(r"\btoday\b", t):
-        out["date_iso"] = now.date().isoformat()
-        out.setdefault("days", 1)
-        return out
-    if re.search(r"\btomm?orrow\b", t):
-        out["date_iso"] = (now + timedelta(days=1)).date().isoformat()
-        out.setdefault("days", 1)
-        return out
-    m = re.search(r"\b(this week|this coming week)\b", t)
+    # Explicit ISO date only — universal format, no language words.
+    import re as _re
+
+    m = _re.search(r"(\d{4}-\d{2}-\d{2})", t)
     if m:
-        out.setdefault("days", 7)
-        return out
-    m = re.search(r"\bnext week\b", t)
-    if m:
-        out["date_iso"] = (now + timedelta(days=7 - now.weekday())).date().isoformat()
-        out.setdefault("days", 7)
-        return out
-    m = re.search(
-        r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b", t)
-    if m:
-        day, month = int(m.group(1)), _MONTHS[m.group(2)[:3]]
-        year = now.year
         try:
-            cand = datetime(year, month, day, tzinfo=timezone.utc)
-        except ValueError:
-            return out
-        if cand.date() < now.date():
-            cand = datetime(year + 1, month, day, tzinfo=timezone.utc)
-        out["date_iso"] = cand.date().isoformat()
-        out.setdefault("days", 1)
-        return out
-    m = re.search(
-        r"\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?\b", t)
-    if m:
-        month, day = _MONTHS[m.group(1)[:3]], int(m.group(2))
-        year = now.year
-        try:
-            cand = datetime(year, month, day, tzinfo=timezone.utc)
-        except ValueError:
-            return out
-        if cand.date() < now.date():
-            cand = datetime(year + 1, month, day, tzinfo=timezone.utc)
-        out["date_iso"] = cand.date().isoformat()
-        out.setdefault("days", 1)
-        return out
-    for name, wd in _WEEKDAYS.items():
-        if re.search(rf"\b{name}\b", t):
-            delta = (wd - now.weekday()) % 7
-            if delta == 0 and re.search(r"\bnext\b", t):
-                delta = 7
-            out["date_iso"] = (now + timedelta(days=delta)).date().isoformat()
+            datetime.fromisoformat(m.group(1))
+            out["date_iso"] = m.group(1)
             out.setdefault("days", 1)
-            return out
+        except ValueError:
+            pass
+    return out
+
+
+def normalize_global(classification: dict | None, tx: dict | None = None,
+                     now: datetime | None = None) -> dict:
+    """Build router-ready {date_iso, days, day_part} from LLM entities.
+
+    Pure data plumbing — no language regex. Prefers explicit date_iso,
+    clamps days to 1-14, passes through the universal day_part bucket.
+    """
+    cls = classification or {}
+    tx = tx or {}
+    out: dict = {}
+    date_iso = str(cls.get("date_iso") or tx.get("date_iso") or "").strip()[:10]
+    if date_iso:
+        try:
+            datetime.fromisoformat(date_iso)
+            out["date_iso"] = date_iso
+        except ValueError:
+            pass
+    days = _coerce_days(cls.get("days") or tx.get("days") or 0)
+    if days:
+        out["days"] = days
+    elif date_iso:
+        out["days"] = 1
+    part = str(cls.get("time_window") or tx.get("time_window") or "").lower().strip()
+    if part in ("morning", "afternoon", "evening"):
+        out["day_part"] = part
+    # Explicit hour window from the LLM wins over named buckets (global).
+    for src in (cls, tx):
+        tr = (src or {}).get("time_range")
+        if isinstance(tr, dict):
+            try:
+                out["time_range"] = {"start_hr": int(tr["start_hr"]), "end_hr": int(tr["end_hr"])}
+                break
+            except (KeyError, TypeError, ValueError):
+                continue
+    # Back-compat: older classify shape carried raw "dates" text that may
+    # contain an ISO date; harvest it without language lists.
+    if "date_iso" not in out and cls.get("dates"):
+        iso = normalize(str(cls.get("dates")), now=now)
+        out.update(iso)
     return out

@@ -48,7 +48,7 @@ async def test_llm_fail_closed_no_keys(monkeypatch):
 def test_mcp_adapter_validation():
     from app.ai_assistant.mcp import adapter
 
-    assert len(adapter.known_tools()) == 23
+    assert len(adapter.known_tools()) == 34
     _, err = adapter.validate("nope", {})
     assert "Unknown capability" in err
     _, err = adapter.validate("create_appointment", {"hospital_id": 1})

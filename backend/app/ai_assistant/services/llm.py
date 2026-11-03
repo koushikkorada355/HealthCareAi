@@ -121,14 +121,21 @@ def _extract_json(text: str) -> dict:
 
 
 CLASSIFY_SYSTEM = (
-    "You are a medical admin intake classifier. Reply with JSON only: "
+    "You are a global healthcare admin intake classifier. Work in ANY language. "
+    "Reply with JSON only: "
     '{"intent": "book|reschedule|cancel|lookup|questionnaire|admin_q|greeting|unsupported|unrelated|ambiguous", '
     '"category": "clinical|admin|unrelated|unsupported|ambiguous", '
-    '"specialty": "", "urgency": "routine|urgent", "dates": "", "safety_flag": "", '
+    '"specialty": "", "doctor_name": "", "hospital_name": "", '
+    '"date_text": "", "date_iso": "", "days": 0, "time_window": "", '
+    '"language": "", "timezone": "", '
+    '"urgency": "routine|urgent", "dates": "", "safety_flag": "", '
     '"repaired_specialty": "", "repaired_query": ""}. '
-    "Patients often mistype: map misspelled symptoms to the right specialty "
-    "(e.g. sholder->Orthopedics) in repaired_specialty, and restate the "
-    "request with corrected spelling in repaired_query (facts unchanged). "
+    "Rules: specialty/doctor_name/hospital_name are free-form strings copied from "
+    "the request (never invent canonical lists). date_text is the raw time phrase, "
+    "date_iso is YYYY-MM-DD when resolvable, days is a span (e.g. 7 for 'this week'), "
+    "time_window is morning|afternoon|evening when stated. language is BCP-47 "
+    "(e.g. en, hi, es) detected from the message. Repair typos in any language into "
+    "repaired_specialty/repaired_query without changing facts. "
     "Never diagnose. Never invent IDs."
 )
 
@@ -142,8 +149,16 @@ async def classify(text: str, history: str = "") -> dict:
         "intent": str(data.get("intent", "ambiguous")),
         "category": str(data.get("category", "ambiguous")),
         "specialty": str(data.get("specialty", "")),
+        "doctor_name": str(data.get("doctor_name", "")),
+        "hospital_name": str(data.get("hospital_name", "")),
+        "date_text": str(data.get("date_text", "") or data.get("dates", "")),
+        "date_iso": str(data.get("date_iso", "")),
+        "days": data.get("days", 0),
+        "time_window": str(data.get("time_window", "")),
+        "language": str(data.get("language", "")),
+        "timezone": str(data.get("timezone", "")),
         "urgency": str(data.get("urgency", "routine")),
-        "dates": str(data.get("dates", "")),
+        "dates": str(data.get("dates", "") or data.get("date_text", "")),
         "safety_flag": str(data.get("safety_flag", "")),
         "repaired_specialty": str(data.get("repaired_specialty", "")),
         "repaired_query": str(data.get("repaired_query", "")),
@@ -191,12 +206,14 @@ async def rewrite_summary(old: str, new_texts: list[str]) -> str:
 
 
 ENTITY_SYSTEM = (
-    "Extract durable booking entities from recent chat turns. Reply JSON only: "
+    "Extract durable booking entities in ANY language. Reply JSON only: "
     '{"doctor_id": 0, "doctor_name": "", "hospital_id": 0, "hospital_name": "", '
-    '"specialty": "", "date_iso": "", "time_window": ""}. '
+    '"specialty": "", "date_iso": "", "days": 0, "time_window": "", '
+    '"language": "", "timezone": ""}. '
     "Tool-result turns list doctors/hospitals WITH their IDs — copy the ID of the "
     "entry matching the named doctor/hospital (prefer same-hospital matches). "
-    "Dates as YYYY-MM-DD when stated; time_window morning|afternoon|evening. "
+    "Dates as YYYY-MM-DD when stated; time_window morning|afternoon|evening; "
+    "days 1-14 for spans like 'this week'. language is BCP-47, timezone IANA. "
     "Never invent IDs."
 )
 
@@ -216,7 +233,7 @@ async def extract_entities(turns: list[str], prior: dict) -> dict:
         return {}
     merged = dict(prior or {})
     for k in ("doctor_id", "doctor_name", "hospital_id", "hospital_name",
-              "specialty", "date_iso", "time_window"):
+              "specialty", "date_iso", "days", "time_window", "language", "timezone"):
         v = data.get(k)
         if v not in (None, "", 0, "0"):
             merged[k] = v

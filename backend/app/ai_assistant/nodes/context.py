@@ -14,7 +14,7 @@ async def run(state: dict) -> dict:
         AIContext.conversation_id == state.get("conversation_id")).first()
     refs: dict = {}
     if ctx:
-        for k in ("conversational", "transactional", "user_ctx", "workflow_state", "integration_state"):
+        for k in ("conversational", "transactional", "user_ctx", "workflow_state"):
             try:
                 refs[k] = json.loads(getattr(ctx, k) or "{}")
             except Exception:

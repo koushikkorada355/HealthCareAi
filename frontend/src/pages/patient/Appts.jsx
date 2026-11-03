@@ -43,7 +43,7 @@ export function Detail() {
   const cancel = async () => {
     if (!cancelReason.trim()) { setMsg('Please give a short reason for cancellation — the care team needs it.'); return }
     setMsg(''); setWorking(true)
-    try { await api(`/appointments/${id}/cancel`, { method: 'POST', body: { reason: cancelReason.trim() } }); setMsg('Cancelled — slot released, EHR and care team notified.'); setShowCancel(false); setCancelReason(''); load() }
+    try { await api(`/appointments/${id}/cancel`, { method: 'POST', body: { reason: cancelReason.trim() } }); setMsg('Cancelled — slot released and care team notified.'); setShowCancel(false); setCancelReason(''); load() }
     catch (e) { setMsg(`Could not cancel: ${e.message}`) } finally { setWorking(false) }
   }
   const reschedule = async () => {
@@ -51,7 +51,7 @@ export function Detail() {
     setMsg(''); setWorking(true)
     try {
       await api(`/appointments/${id}/reschedule`, { method: 'POST', body: { new_starts_at: selSlot.starts_at, new_ends_at: selSlot.ends_at } })
-      setMsg(`Rescheduled to ${new Date(selSlot.starts_at).toLocaleString()} — slot revalidated, EHR updated.`); setShowResched(false); setSelSlot(null); load()
+      setMsg(`Rescheduled to ${new Date(selSlot.starts_at).toLocaleString()} — slot revalidated.`); setShowResched(false); setSelSlot(null); load()
     } catch (ex) { setMsg(`Could not reschedule: ${ex.message}`) } finally { setWorking(false) }
   }
   return <div>
@@ -61,7 +61,7 @@ export function Detail() {
       <div className="font-display text-lg font-semibold text-crit">Cancel appointment #{a.id}?</div>
       <ul className="mt-2 list-disc pl-5 text-sm text-ink-soft">
         <li>Your slot on <b>{new Date(a.starts_at).toLocaleString()}</b> will be released for other patients.</li>
-        <li>The health system record and the care team will be notified.</li>
+        <li>The care team will be notified.</li>
         <li>This cannot be undone — you can always book a new slot afterwards.</li>
       </ul>
       <label htmlFor="cancel-reason" className="mt-3 block text-xs font-bold">REASON FOR CANCELLATION *</label>
@@ -92,11 +92,9 @@ export function Detail() {
       </div>}
     </div>}
     <div className="grid md:grid-cols-2 gap-4">
-      <Card><div className="flex items-center gap-2"><Pill value={a.status} /><Pill value={a.integration_status} /></div>
-        <div className="mt-3 text-sm space-y-1"><div><b>When:</b> {new Date(a.starts_at).toLocaleString()} → {new Date(a.ends_at).toLocaleTimeString()}</div><div><b>Doctor:</b> {a.doctor_name}</div><div><b>Reason:</b> {a.reason}</div><div><b>External ID:</b> <code>{a.external_id || '—'}</code></div><div><b>Correlation:</b> <code>{a.correlation_id}</code></div></div></Card>
-      <Card><div className="font-bold mb-2">Verification + history</div>
-        <div className="text-xs font-bold text-ink-soft">EXTERNAL VERIFICATIONS</div>
-        {a.verifications?.length ? a.verifications.map((v, i) => <div key={i} className="text-sm py-1 border-b border-slate-50">{v.method} → <Pill value={v.result} /></div>) : <div className="text-sm text-ink-soft">No verifications yet.</div>}
+      <Card><div className="flex items-center gap-2"><Pill value={a.status} /></div>
+        <div className="mt-3 text-sm space-y-1"><div><b>When:</b> {new Date(a.starts_at).toLocaleString()} → {new Date(a.ends_at).toLocaleTimeString()}</div><div><b>Doctor:</b> {a.doctor_name}</div><div><b>Reason:</b> {a.reason}</div><div><b>Correlation:</b> <code>{a.correlation_id}</code></div></div></Card>
+      <Card><div className="font-bold mb-2">History</div>
         <div className="text-xs font-bold text-ink-soft mt-3">STATUS TIMELINE</div>
         {a.history?.map((h, i) => <div key={i} className="text-sm py-1 border-b border-slate-50">{h.from || '∅'} → <b>{h.to}</b> <span className="text-ink-soft">· {h.actor}</span></div>)}
       </Card>

@@ -31,11 +31,8 @@ class Hospital(Base):
     contact_email: Mapped[str] = mapped_column(String(255), default="")
     operating_hours: Mapped[str] = mapped_column(Text, default="{}")
     services: Mapped[str] = mapped_column(Text, default="[]")
-    ehr_vendor: Mapped[str] = mapped_column(String(64), default="mock")
-    ehr_config: Mapped[str] = mapped_column(Text, default="{}")
     cover_url: Mapped[str] = mapped_column(String(512), default="")
     review_notes: Mapped[str] = mapped_column(Text, default="")
-    external_facility_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -69,7 +66,6 @@ class Doctor(Base):
     consultation_types: Mapped[str] = mapped_column(Text, default='["in_person"]')
     duration_minutes: Mapped[int] = mapped_column(Integer, default=30)
     status: Mapped[str] = mapped_column(String(32), default="invited", index=True)  # invited|active|inactive|suspended
-    external_provider_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     rating: Mapped[float] = mapped_column(default=4.5)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -86,7 +82,6 @@ class Patient(Base):
     address: Mapped[str] = mapped_column(Text, default="")
     home_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     home_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
-    external_patient_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     home_hospital_id: Mapped[int | None] = mapped_column(ForeignKey("hospitals.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

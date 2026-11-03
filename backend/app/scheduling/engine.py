@@ -7,14 +7,12 @@ import json
 VALID_TRANSITIONS = {
     "requested": {"pending","cancelled","failed"},
     "pending": {"confirmed","cancelled","failed"},
-    "sync_pending": {"confirmed","failed","reconciliation_required"},
-    "confirmed": {"rescheduled","cancelled","completed","no_show","reconciliation_required"},
+    "confirmed": {"rescheduled","cancelled","completed","no_show"},
     "rescheduled": {"confirmed","cancelled","completed"},
-    "reconciliation_required": {"confirmed","cancelled","failed"},
     "failed": {"requested"},
     "cancelled": set(), "completed": set(), "no_show": set(),
 }
-APPT_ALIASES = {"synchronization pending":"sync_pending","synchronization_pending":"sync_pending","no-show":"no_show","reconciliation required":"reconciliation_required"}
+APPT_ALIASES = {"no-show":"no_show"}
 
 def norm_status(s: str) -> str:
     s = (s or "").strip().lower()
@@ -93,7 +91,7 @@ def is_slot_free(db: Session, doctor_id: int, calendar_id: int, starts_at: datet
     lv = db.query(models.Leave).filter(models.Leave.doctor_id==doctor_id, models.Leave.starts_at < ends_at, models.Leave.ends_at > starts_at).first()
     if lv: return False
     # booked
-    q = db.query(models.Appointment).filter(models.Appointment.doctor_id==doctor_id, models.Appointment.starts_at < ends_at, models.Appointment.ends_at > starts_at, models.Appointment.status.in_(["pending","confirmed","sync_pending","rescheduled","reconciliation_required"]))
+    q = db.query(models.Appointment).filter(models.Appointment.doctor_id==doctor_id, models.Appointment.starts_at < ends_at, models.Appointment.ends_at > starts_at, models.Appointment.status.in_(["pending","confirmed","rescheduled"]))
     if ignore_appointment_id: q = q.filter(models.Appointment.id != ignore_appointment_id)
     if q.first(): return False
     # working hours check

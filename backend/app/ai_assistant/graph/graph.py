@@ -39,7 +39,7 @@ def build_graph(checkpointer=None):
     g.add_node("result", tool_result.run)
     g.add_node("human_transfer", human_transfer.run)
     g.add_node("response", response.run)
-    g.add_node("memory", memory.run)
+    g.add_node("memory", memory.run)        
     g.set_entry_point("conversation")
     g.add_edge("conversation", "context")
     g.add_edge("context", "classify")

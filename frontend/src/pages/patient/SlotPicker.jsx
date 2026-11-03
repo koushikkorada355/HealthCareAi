@@ -46,10 +46,8 @@ export default function SlotPicker({ doctorId, dayPref = 'Any day', onPick, comp
   }, [slots])
 
   useEffect(() => {
-    if (!dayPref || dayPref === 'Any day' || day) return
-    const t = new Date()
-    if (dayPref === 'Today') setDay(t.toDateString())
-    else if (dayPref === 'Tomorrow') { const tm = new Date(); tm.setDate(tm.getDate() + 1); setDay(tm.toDateString()) }
+    if (!dayPref || day) return
+    try { const d = new Date(dayPref); if (!isNaN(d)) setDay(d.toDateString()) } catch { /* ignore */ }
   }, [dayPref]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const visible = useMemo(() => {

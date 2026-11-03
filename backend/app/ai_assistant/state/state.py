@@ -25,6 +25,10 @@ class AssistantState(TypedDict, total=False):
     selected_tool: str
     tool_args: dict[str, Any]
     plan_steps: list[dict[str, Any]]
+    plan_batch: list[dict[str, Any]]
+    completed_step_ids: list[str]
+    approved_step_ids: list[str]
+    pending_approval: dict[str, Any] | None
     plan_active: bool
     missing_tool: dict[str, Any]
     pending_confirmation: dict[str, Any]

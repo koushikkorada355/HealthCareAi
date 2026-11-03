@@ -14,7 +14,7 @@ router = APIRouter(tags=["appointments"])
 class BookIn(BaseModel):
     hospital_id: int; doctor_id: int; patient_id: int
     starts_at: str; ends_at: str; calendar_id: int | None = None; appointment_type_id: int | None = None
-    mode: str = "in_person"; reason: str = ""; idempotency_key: str = ""; simulate: str = ""
+    mode: str = "in_person"; reason: str = ""; idempotency_key: str = ""
 
 @router.post("/appointments")
 async def book(b: BookIn, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -34,7 +34,7 @@ async def book(b: BookIn, db: Session = Depends(get_db), u=Depends(get_current_u
     if e <= datetime.now(timezone.utc):
         raise HTTPException(400, "SLOT_PAST: Cannot book a slot in the past")
     try:
-        out = await book_appointment(db, hospital_id=b.hospital_id, doctor_id=b.doctor_id, patient_id=b.patient_id, starts_at=b.starts_at, ends_at=b.ends_at, calendar_id=b.calendar_id, appointment_type_id=b.appointment_type_id, mode=b.mode, reason=b.reason, idempotency_key=b.idempotency_key, actor_user_id=u.id, simulate=b.simulate, corr=corr)
+        out = await book_appointment(db, hospital_id=b.hospital_id, doctor_id=b.doctor_id, patient_id=b.patient_id, starts_at=b.starts_at, ends_at=b.ends_at, calendar_id=b.calendar_id, appointment_type_id=b.appointment_type_id, mode=b.mode, reason=b.reason, idempotency_key=b.idempotency_key, actor_user_id=u.id, corr=corr)
         return out
     except ValueError as e: raise HTTPException(409, str(e))
 
@@ -57,7 +57,7 @@ def list_a(db: Session = Depends(get_db), u=Depends(get_current_user), status: s
         d = db.query(models.Doctor).filter(models.Doctor.id==a.doctor_id).first()
         p = db.query(models.Patient).filter(models.Patient.id==a.patient_id).first()
         h = db.query(models.Hospital).filter(models.Hospital.id==a.hospital_id).first()
-        out.append({"id":a.id,"status":a.status,"starts_at":a.starts_at.isoformat(),"ends_at":a.ends_at.isoformat(),"mode":a.mode,"reason":a.reason,"doctor_id":a.doctor_id,"doctor_name":d.name if d else "","patient_id":a.patient_id,"patient_name":p.full_name if p else "","hospital_id":a.hospital_id,"hospital_name":h.name if h else "","external_id":a.external_appointment_id,"integration_status":a.integration_status,"correlation_id":a.correlation_id,"via_ai":bool(a.conversation_id),"conversation_id":a.conversation_id})
+        out.append({"id":a.id,"status":a.status,"starts_at":a.starts_at.isoformat(),"ends_at":a.ends_at.isoformat(),"mode":a.mode,"reason":a.reason,"doctor_id":a.doctor_id,"doctor_name":d.name if d else "","patient_id":a.patient_id,"patient_name":p.full_name if p else "","hospital_id":a.hospital_id,"hospital_name":h.name if h else "","correlation_id":a.correlation_id,"via_ai":bool(a.conversation_id),"conversation_id":a.conversation_id})
     return out
 
 @router.get("/appointments/{aid}")
@@ -68,10 +68,9 @@ def get_a(aid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
     if u.role=="patient" and a.patient_id!=u.patient_id: raise HTTPException(403)
     if u.role=="doctor" and a.doctor_id!=u.doctor_id: raise HTTPException(403)
     hist = [{"from":h.from_status,"to":h.to_status,"actor":h.actor,"note":h.note,"at":h.created_at.isoformat()} for h in db.query(models.AppointmentHistory).filter(models.AppointmentHistory.appointment_id==aid).order_by(models.AppointmentHistory.created_at).all()]
-    vers = [{"method":v.method,"result":v.result,"at":v.created_at.isoformat()} for v in db.query(models.IntegrationVerification).filter(models.IntegrationVerification.appointment_id==aid).all()]
     d = db.query(models.Doctor).filter(models.Doctor.id==a.doctor_id).first()
     p = db.query(models.Patient).filter(models.Patient.id==a.patient_id).first()
-    return {"id":a.id,"status":a.status,"starts_at":a.starts_at.isoformat(),"ends_at":a.ends_at.isoformat(),"mode":a.mode,"reason":a.reason,"doctor_id":a.doctor_id,"doctor_name":d.name if d else "","patient_name":p.full_name if p else "","hospital_id":a.hospital_id,"external_id":a.external_appointment_id,"integration_status":a.integration_status,"correlation_id":a.correlation_id,"history":hist,"verifications":vers,"via_ai":bool(a.conversation_id),"conversation_id":a.conversation_id}
+    return {"id":a.id,"status":a.status,"starts_at":a.starts_at.isoformat(),"ends_at":a.ends_at.isoformat(),"mode":a.mode,"reason":a.reason,"doctor_id":a.doctor_id,"doctor_name":d.name if d else "","patient_name":p.full_name if p else "","hospital_id":a.hospital_id,"correlation_id":a.correlation_id,"history":hist,"verifications":[],"via_ai":bool(a.conversation_id),"conversation_id":a.conversation_id}
 
 @router.post("/appointments/{aid}/reschedule")
 async def resched(aid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -79,7 +78,6 @@ async def resched(aid: int, body: dict, db: Session = Depends(get_db), u=Depends
         raise HTTPException(400, "new_starts_at and new_ends_at are required")
     try:
         from ...scheduling.engine import validate_slot
-        from ...ehr.mock_client import EHRClient
         from ...services.workflows import fire_event
         corr = new_corr()
         ap = db.query(models.Appointment).filter(models.Appointment.id == aid).first()
@@ -94,11 +92,6 @@ async def resched(aid: int, body: dict, db: Session = Depends(get_db), u=Depends
         ap.starts_at, ap.ends_at = ns, ne
         try: transition(db, ap, "rescheduled", actor=f"user:{u.id}", note=f"{old} -> {ns.isoformat()}", corr=corr)
         except Exception: db.commit()
-        if ap.external_appointment_id:
-            try:
-                await EHRClient().update_appointment(ap.external_appointment_id, {"starts_at": ns.isoformat(), "ends_at": ne.isoformat()})
-                ap.integration_status = "synced"; db.commit()
-            except Exception: ap.integration_status = "reconciliation_required"; db.commit()
         fire_event(db, "appointment.rescheduled", ap.hospital_id, {"appointment_id": ap.id}, corr)
         return {"id": ap.id, "status": ap.status, "starts_at": ap.starts_at.isoformat()}
     except PermissionError as e: raise HTTPException(403, str(e))
@@ -107,7 +100,6 @@ async def resched(aid: int, body: dict, db: Session = Depends(get_db), u=Depends
 @router.post("/appointments/{aid}/cancel")
 async def cancel(aid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):
     try:
-        from ...ehr.mock_client import EHRClient
         from ...services.workflows import fire_event
         corr = new_corr()
         ap = db.query(models.Appointment).filter(models.Appointment.id == aid).first()
@@ -116,9 +108,6 @@ async def cancel(aid: int, body: dict, db: Session = Depends(get_db), u=Depends(
         if u.role == "patient" and ap.patient_id != u.patient_id: raise PermissionError("Not your appointment")
         if u.role == "doctor" and ap.doctor_id != u.doctor_id: raise PermissionError("Not your appointment")
         transition(db, ap, "cancelled", actor=f"user:{u.id}", note=(body.get("reason") or "cancelled"), corr=corr)
-        if ap.external_appointment_id:
-            try: await EHRClient().cancel_appointment(ap.external_appointment_id)
-            except Exception: pass
         fire_event(db, "appointment.cancelled", ap.hospital_id, {"appointment_id": ap.id}, corr)
         return {"id": ap.id, "status": "cancelled"}
     except PermissionError as e: raise HTTPException(403, str(e))
@@ -144,12 +133,4 @@ def complete(aid: int, b: CompleteIn, db: Session = Depends(get_db), u=Depends(g
     audit(db, f"appointment.{b.to}", "appointment", a.id, a.hospital_id, u.id, {}, a.correlation_id)
     return {"id": a.id, "status": a.status}
 
-@router.post("/appointments/{aid}/retry-sync")
-async def retry(aid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
-    if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
-    from ...services.booking import recover_unknown_outcome
-    a = db.query(models.Appointment).filter(models.Appointment.id==aid).first()
-    if not a: raise HTTPException(404)
-    op = db.query(models.IntegrationOperation).filter(models.IntegrationOperation.ref_id==aid).order_by(models.IntegrationOperation.id.desc()).first()
-    if not op: raise HTTPException(400, "no operation to recover")
-    return await recover_unknown_outcome(db, aid, op.id, new_corr())
+

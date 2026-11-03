@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { api } from '../../api/client.js'
 import { Card, PageHead, Pill, Avatar, Empty } from '../../components/ui.jsx'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 function useHid() { const [me, setMe] = useState(null); useEffect(() => { api('/auth/me').then(setMe).catch(() => {}) }, []); return me?.hospital_id }
 
@@ -64,9 +64,8 @@ export function Dash() {
       api(`/doctors?hospital_id=${hid}`).then(r => r.filter(x => x.status === 'active')).catch(() => []),
       api(`/questionnaires?hospital_id=${hid}`).catch(() => []),
       api('/workflows').then(r => r.filter(w => w.is_active)).catch(() => []),
-      api('/integrations/connections').then(r => r.filter(c => c.status === 'active')).catch(() => []),
       api(`/reviews/summary?hospital_id=${hid}`).catch(() => null),
-    ]).then(([h, depts, specs, docs, qs, wfs, conns, rev]) => {
+    ]).then(([h, depts, specs, docs, qs, wfs, rev]) => {
       setReady([
         ['Profile complete', !!(h?.address && h?.city && h?.phone), h ? `${h.city} · ${h.phone}` : ''],
         ['Location set', h?.latitude != null && h?.longitude != null, (h?.latitude != null) ? `${h.latitude}, ${h.longitude}` : 'add in Hospital → Location'],
@@ -75,20 +74,18 @@ export function Dash() {
         ['Active doctors', docs.length > 0, `${docs.length}`],
         ['Questionnaires', qs.length > 0, `${qs.length}`],
         ['Workflows active', wfs.length > 0, `${wfs.length}`],
-        ['Integration active', conns.length > 0, conns[0]?.vendor || ''],
         ['Reviews', (rev?.count || 0) > 0, rev?.count ? `★ ${rev.avg} (${rev.count})` : 'none yet'],
       ])
     }).catch(() => {})
   }, [hid])
-  const cards = [['Appointments', d?.appointments], ['Confirmed', d?.confirmed], ['Doctors', d?.doctors], ['Cancelled', d?.cancelled], ['Open reconciliation', d?.reconciliation_open], ['EHR risk', d?.ehr_ops_failed]]
+  const cards = [['Appointments', d?.appointments], ['Confirmed', d?.confirmed], ['Doctors', d?.doctors], ['Cancelled', d?.cancelled]]
   if (hid === undefined) return <div className="p-8 text-ink-soft">Loading…</div>
   if (!hid) return <div><PageHead title="Hospital overview" sub="Get your hospital approved to unlock this dashboard." /><Card><Empty title="No hospital yet" sub="Register your hospital for System Admin review first." /><Link to="/hospitals/apply" className="btn-primary text-sm mt-3 inline-block">Register hospital →</Link></Card></div>
-  return <div><PageHead title="Hospital overview" sub="Bookings, capacity, questionnaires, integration risk." />
+  return <div><PageHead title="Hospital overview" sub="Bookings, capacity and questionnaires." />
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{cards.map(([l, v]) => <Card key={l}><div className="text-xs font-bold text-ink-soft">{l.toUpperCase()}</div><div className="text-3xl font-bold">{v ?? '–'}</div></Card>)}</div>
-    {ready && <Card className="mt-4"><div className="font-bold mb-2">Ready for next phase {ready.every(([, ok]) => ok) ? '✓' : `(${ready.filter(([, ok]) => ok).length}/${ready.length})`}</div><div className="grid sm:grid-cols-2 md:grid-cols-4 gap-2">{ready.map(([l, ok, extra]) => <div key={l} className="flex items-center gap-2 text-sm"><span>{ok ? '✅' : '⬜'}</span><span><b>{l}</b> <span className="text-ink-soft">· {extra}</span></span></div>)}</div>{!ready.every(([, ok]) => ok) && <div className="text-xs text-ink-soft mt-2">Finish: Hospital profile → Doctors → Schedules → Questionnaires → Workflows → Integration.</div>}</Card>}
-    {Number(d?.reconciliation_open) > 0 && <Card className="mt-4 !border-red-200"><b className="text-crit">{d.reconciliation_open} reconciliation(s) need attention.</b> <Link to="/hospital/integrations" className="text-teal font-semibold text-sm ml-2">Open integration log →</Link></Card>}
+    {ready && <Card className="mt-4"><div className="font-bold mb-2">Ready for next phase {ready.every(([, ok]) => ok) ? '✓' : `(${ready.filter(([, ok]) => ok).length}/${ready.length})`}</div><div className="grid sm:grid-cols-2 md:grid-cols-4 gap-2">{ready.map(([l, ok, extra]) => <div key={l} className="flex items-center gap-2 text-sm"><span>{ok ? '✅' : '⬜'}</span><span><b>{l}</b> <span className="text-ink-soft">· {extra}</span></span></div>)}</div>{!ready.every(([, ok]) => ok) && <div className="text-xs text-ink-soft mt-2">Finish: Hospital profile → Doctors → Schedules → Questionnaires → Workflows.</div>}</Card>}
     <div className="grid md:grid-cols-2 gap-4 mt-4">
-      <Card><div className="font-bold mb-2">EHR risk</div><div className="text-sm">Failed/unknown ops: <b>{d?.ehr_ops_failed ?? 0}</b></div><div className="text-sm">Questionnaires pending: <b>{d?.questionnaires_pending ?? 0}</b></div></Card>
+      <Card><div className="font-bold mb-2">Pending work</div><div className="text-sm">Questionnaires pending: <b>{d?.questionnaires_pending ?? 0}</b></div></Card>
       <Card><div className="font-bold mb-2">Shortcuts</div><div className="flex flex-wrap gap-2 text-sm"><Link to="/hospital/doctors" className="btn-ghost">Doctors</Link><Link to="/hospital/appointments" className="btn-ghost">Appointments</Link><Link to="/hospital/questionnaires" className="btn-ghost">Questionnaires</Link></div></Card>
     </div></div>
 }
@@ -154,7 +151,6 @@ export function DoctorDetail() {
       <div className="grid grid-cols-2 gap-2"><div><label className="text-xs font-bold">EXPERIENCE (YRS)</label><input className="input mt-1" type="number" value={f.experience_years} onChange={e => setF({ ...f, experience_years: e.target.value })} /></div><div><label className="text-xs font-bold">DURATION (MIN)</label><input className="input mt-1" type="number" value={f.duration_minutes} onChange={e => setF({ ...f, duration_minutes: e.target.value })} /></div></div>
       <div><label className="text-xs font-bold">SPECIALTY (now: {d.specialty || '—'})</label><select className="input mt-1" value={f.specialty_id} onChange={e => setF({ ...f, specialty_id: e.target.value })}><option value="">Keep current</option>{specs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
       <div><label className="text-xs font-bold">DEPARTMENT</label><select className="input mt-1" value={f.department_id} onChange={e => setF({ ...f, department_id: e.target.value })}><option value="">Keep current</option>{depts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-      <div className="text-ink-soft">External provider ID: <code>{d.external_provider_id}</code></div>
       <div className="flex gap-2"><button type="button" disabled={busy} onClick={save} className="btn-primary text-sm">Save</button><button type="button" onClick={remove} className="btn-ghost text-sm !text-crit">Deactivate</button></div>
     </div></Card>
     <Card><div className="font-bold mb-2">Calendars</div>{d.calendars?.map(c => <div key={c.id} className="text-sm py-1.5 border-t border-slate-100">{c.name} · {c.is_active ? 'active' : 'paused'}</div>)}</Card></div></div>
@@ -198,8 +194,8 @@ export function Appointments() {
   const [rows, setRows] = useState([]); const [f, setF] = useState('all'); const [aiOnly, setAiOnly] = useState(false)
   useEffect(() => { api('/appointments').then(setRows).catch(() => {}) }, [])
   const list = rows.filter(a => (f === 'all' || a.status === f) && (!aiOnly || a.via_ai))
-  return <div><PageHead title="Appointments" sub="Every booking with verification state — including AI-driven ones." right={<span className="flex gap-2"><button type="button" onClick={() => setAiOnly(!aiOnly)} className={aiOnly ? 'btn-primary text-xs' : 'btn-ghost text-xs'}>{aiOnly ? '✓ AI-booked only' : 'AI-booked only'}</button><select className="input !w-auto text-sm" aria-label="Filter by status" value={f} onChange={e => setF(e.target.value)}>{['all', 'confirmed', 'pending', 'rescheduled', 'cancelled', 'completed', 'no_show', 'failed', 'reconciliation_required'].map(s => <option key={s} value={s}>{s === 'all' ? 'All statuses' : s}</option>)}</select></span>} />
-    <Card>{list.length ? list.map(a => <div key={a.id} className="flex flex-wrap justify-between gap-2 text-sm py-2.5 border-t border-slate-100"><span><b>#{a.id}</b> {new Date(a.starts_at).toLocaleString()} · {a.doctor_name} · {a.patient_name}</span><span className="flex gap-1.5">{a.via_ai && <span className="pill bg-violet-50 text-violet-700">via AI</span>}<Pill value={a.status} /><Pill value={a.integration_status} /></span></div>) : <Empty title="No appointments match" />}</Card></div>
+  return <div><PageHead title="Appointments" sub="Every booking — including AI-driven ones." right={<span className="flex gap-2"><button type="button" onClick={() => setAiOnly(!aiOnly)} className={aiOnly ? 'btn-primary text-xs' : 'btn-ghost text-xs'}>{aiOnly ? '✓ AI-booked only' : 'AI-booked only'}</button><select className="input !w-auto text-sm" aria-label="Filter by status" value={f} onChange={e => setF(e.target.value)}>{['all', 'confirmed', 'pending', 'rescheduled', 'cancelled', 'completed', 'no_show', 'failed'].map(s => <option key={s} value={s}>{s === 'all' ? 'All statuses' : s}</option>)}</select></span>} />
+    <Card>{list.length ? list.map(a => <div key={a.id} className="flex flex-wrap justify-between gap-2 text-sm py-2.5 border-t border-slate-100"><span><b>#{a.id}</b> {new Date(a.starts_at).toLocaleString()} · {a.doctor_name} · {a.patient_name}</span><span className="flex gap-1.5">{a.via_ai && <span className="pill bg-violet-50 text-violet-700">via AI</span>}<Pill value={a.status} /></span></div>) : <Empty title="No appointments match" />}</Card></div>
 }
 const QTYPES = ['yes_no', 'choice', 'multi', 'numeric', 'date', 'short_text', 'long_text', 'structured']
 
@@ -241,28 +237,6 @@ function QRow({ q, reload, setMsg, onEdit }) {
   useEffect(() => { api(`/questionnaire-responses?questionnaire_id=${q.id}`).then(r => setResp(r.length)).catch(() => {}) }, [q.id])
   return <Card className="mb-3"><div className="flex flex-wrap items-center gap-2"><div className="font-bold flex-1">{q.title} <span className="text-xs text-ink-faint">· {q.category} · {q.schema?.length || 0} questions · {resp ?? '—'} responses</span></div><Pill value={q.is_active ? 'active' : 'inactive'} /><button type="button" onClick={onEdit} className="btn-ghost text-xs">Edit</button><button type="button" className="btn-ghost text-xs" onClick={async () => { await api(`/questionnaires/${q.id}`, { method: 'PATCH', body: { is_active: !q.is_active } }); setMsg(q.is_active ? 'Deactivated.' : 'Activated.'); reload() }}>{q.is_active ? 'Deactivate' : 'Activate'}</button><button type="button" className="text-crit text-xs font-bold" onClick={async () => { if (!window.confirm(`Delete ${q.title}? Blocked while responses exist.`)) return; try { await api(`/questionnaires/${q.id}`, { method: 'DELETE' }); setMsg('Deleted.'); reload() } catch (e) { setMsg(`Could not delete: ${e.message}`) } }}>Delete</button></div><pre className="text-xs bg-slate-50 rounded-xl p-2 mt-2 overflow-auto">{JSON.stringify(q.schema, null, 1).slice(0, 600)}</pre></Card>
 }
-export function Integrations() {
-  const [ops, setOps] = useState([]); const [conns, setConns] = useState([]); const [recon, setRecon] = useState([]); const [msg, setMsg] = useState(''); const [edit, setEdit] = useState({})
-  const load = () => { api('/integrations/operations').then(setOps).catch(() => {}); api('/integrations/connections').then(setConns).catch(() => {}); api('/reconciliation').then(setRecon).catch(() => {}) }
-  useEffect(load, [])
-  const testConn = async (c) => {
-    setMsg('')
-    try { const r = await api(`/integrations/connections/${c.id}/test`, { method: 'POST', body: {} }); setMsg(r.ok ? `Connection #${c.id}: reachable.` : `Connection #${c.id}: unreachable — ${r.detail?.slice(0, 120)}`); load() }
-    catch (e) { setMsg(`Test failed: ${e.message}`) }
-  }
-  const saveConn = async (c) => {
-    setMsg('')
-    try { await api(`/integrations/connections/${c.id}`, { method: 'PATCH', body: { vendor: edit[c.id]?.vendor ?? c.vendor, base_url: edit[c.id]?.base_url ?? c.base_url } }); setMsg('Settings saved. Run Test to verify.'); load() }
-    catch (e) { setMsg(`Could not save: ${e.message}`) }
-  }
-  return <div><PageHead title="Healthcare integration" sub="Simple settings: vendor, address, key status. No appointment operations here." right={<button className="btn-ghost text-sm" onClick={load}>Refresh</button>} />
-    {msg && <div className="card p-3 mb-3 text-sm">{msg}</div>}
-    {recon.filter(r => r.status === 'open').map(r => <Card key={r.id} className="mb-3 !border-red-200"><div className="text-sm"><b className="text-crit">Reconciliation #{r.id}</b> · appt #{r.appointment_id} · {r.issue} · <code>{r.correlation_id}</code></div><button className="btn-primary text-xs mt-2" onClick={async () => { await api(`/appointments/${r.appointment_id}/retry-sync`, { method: 'POST', body: {} }); load() }}>Probe EHR + sync now</button></Card>)}
-    <div className="grid md:grid-cols-2 gap-4">
-      <Card><div className="font-bold mb-2">Connections</div>{conns.map(c => <div key={c.id} className="text-sm py-2 border-t border-slate-100"><div className="flex justify-between items-center"><span>#{c.hospital_id} · {c.vendor} · {c.base_url}</span><Pill value={c.status} /></div><div className="grid grid-cols-2 gap-2 mt-2"><input aria-label="Vendor" className="input" defaultValue={c.vendor} onChange={e => setEdit({ ...edit, [c.id]: { ...edit[c.id], vendor: e.target.value } })} /><input aria-label="Base URL" className="input" defaultValue={c.base_url} onChange={e => setEdit({ ...edit, [c.id]: { ...edit[c.id], base_url: e.target.value } })} /></div><div className="flex gap-2 mt-2"><button type="button" className="btn-ghost text-xs" onClick={() => saveConn(c)}>Save</button><button type="button" className="btn-primary text-xs" onClick={() => testConn(c)}>Test connection</button></div></div>)}{!conns.length && <div className="text-sm text-ink-soft">No connections yet — created on hospital approval.</div>}</Card>
-      <Card><div className="font-bold mb-2">Operations</div>{ops.slice(0, 30).map(o => <div key={o.id} className="text-sm py-1.5 border-t border-slate-100"><div className="flex justify-between"><span><code>{o.kind}</code> appt #{o.ref_id}</span><Pill value={o.status} /></div><div className="text-xs text-ink-soft font-mono">{o.correlation_id} · {o.error?.slice(0, 120)}</div></div>)}</Card>
-    </div></div>
-}
 export function Workflows() {
   const [ws, setWs] = useState([]); const [ex, setEx] = useState([]); const [msg, setMsg] = useState('')
   const load = () => { api('/workflows').then(setWs).catch(() => {}); api('/workflow-executions').then(setEx).catch(() => {}) }
@@ -287,9 +261,7 @@ export function Analytics() {
   const [d, setD] = useState(null)
   useEffect(() => { api('/analytics/overview').then(setD).catch(() => {}) }, [])
   const ap = Object.entries(d?.appointments_by_status || {}).map(([name, value]) => ({ name, value }))
-  return <div><PageHead title="Analytics" /><div className="grid md:grid-cols-2 gap-4">
-    <Card><div className="font-bold mb-2">Appointments by status</div><ResponsiveContainer width="100%" height={240}><BarChart data={ap}><XAxis dataKey="name" fontSize={11} /><YAxis /><Tooltip /><Bar dataKey="value" fill="#0E7C7B" radius={6} /></BarChart></ResponsiveContainer></Card>
-    <Card><div className="font-bold mb-2">EHR operations</div><ResponsiveContainer width="100%" height={240}><PieChart><Pie data={Object.entries(d?.ehr_ops || {}).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" outerRadius={90} label>{[0, 1, 2, 3].map(i => <Cell key={i} fill={['#0E7C7B', '#1B9E6B', '#C98A12', '#C0392B'][i % 4]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></Card></div></div>
+  return <div><PageHead title="Analytics" /><Card><div className="font-bold mb-2">Appointments by status</div><ResponsiveContainer width="100%" height={280}><BarChart data={ap}><XAxis dataKey="name" fontSize={11} /><YAxis /><Tooltip /><Bar dataKey="value" fill="#0E7C7B" radius={6} /></BarChart></ResponsiveContainer></Card></div>
 }
 export function Reviews() {
   const hid = useHid(); const [rows, setRows] = useState([]); const [summary, setSummary] = useState(null)
@@ -312,7 +284,7 @@ export function Reviews() {
 export function Activity() {
   const [rows, setRows] = useState([])
   useEffect(() => { api('/activity').then(setRows).catch(() => {}) }, [])
-  return <div><PageHead title="Hospital activity" sub="Doctor, schedule, questionnaire, workflow, integration and review events — this hospital only." />
+  return <div><PageHead title="Hospital activity" sub="Doctor, schedule, questionnaire, workflow and review events — this hospital only." />
     <Card>{rows.map((a, i) => <div key={i} className="text-sm py-1.5 border-t border-slate-100"><span className="font-mono text-xs text-ink-soft">{a.at?.slice(0, 19)}</span> · <b>{a.kind}</b> · {a.text} <code className="text-xs text-ink-faint">{a.corr}</code></div>)}{!rows.length && <Empty title="No activity yet" sub="Configuration changes will appear here." />}</Card></div>
 }
 export function Audit() {

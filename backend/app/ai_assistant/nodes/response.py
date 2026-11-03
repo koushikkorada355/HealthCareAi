@@ -1,96 +1,16 @@
-"""response node: LLM writes the reply from verified facts only. No hardcode."""
+"""response node: purely LLM-driven reply + LLM-driven chat UI.
+
+The LLM writes the reply from verified facts and designs the card UI
+(layout, wording, buttons) in the user's language. Code only enforces
+structural invariants: no unverified booking claims (LLM self-check) and no
+hallucinated UI references (validate_ui: every id/date cited by a button must
+exist in verified tool output). The deterministic build_card remains as the
+fallback when the LLM UI is unavailable or fails validation.
+"""
 from __future__ import annotations
 
 import json
-import re
 import time
-
-_CLINICAL_OUT = re.compile(
-    r"\byou have (a|an|the)\b.*\b(condition|disease|syndrome|disorder|infection|cancer)\b",
-    re.IGNORECASE)
-
-_BANNED = (
-    "working to secure", "still working", "incomplete data",
-    "contact citycare", "contact the hospital", "call the hospital",
-    "log into", "patient portal", "front desk", "reviewing your questionnaire",
-    "reviewing your records", "retrieved, i will share", "schedule is retrieved",
-    "connect you with a human", "connect you to a human", "connect me to a human",
-    "human assistant", "live agent", "team member", "will follow up",
-    "follow up shortly", "reach out",
-)
-
-_DENIAL_PATTERNS = (
-    "don't have access", "do not have access", "no access to",
-    "cannot access", "can't access", "cant access", "couldn't access",
-    "unable to book", "unable to schedule", "unable to check",
-    # Only flagged when no tool ran (tool_ok False) — genuine empty-slot
-    # results have tool_ok True and keep their honest wording.
-    "no current availability", "no availability",
-)
-
-_SPECULATIVE = (
-    "explore other", "try a different", "try another", "other providers",
-    "other dates", "other doctors", "you could also", "i recommend",
-    "why don't you", "why dont you",
-)
-
-_BOOKED_CLAIM = re.compile(
-    r"\b(booked|booking confirmed|confirmed your appointment|scheduled|reserved)\b"
-    r"|appointment\s+#?\d+\s+(is\s+)?(booked|confirmed)",
-    re.IGNORECASE)
-
-
-def violations(reply: str, tool_ok: bool, booking_proven: bool = False,
-               dup_hits: int = 0, speculative: bool = False) -> list[str]:
-    """Pure validator: banned stall/deflection phrasing + opener + false denials
-    + false booking confirmations + text/card duplication + speculation."""
-    low = (reply or "").lower()
-    hits = [b for b in _BANNED if b in low]
-    if low.startswith("you reported"):
-        hits.append("opener:you reported")
-    if not tool_ok and any(p in low for p in _DENIAL_PATTERNS):
-        hits.append("false-denial")
-    if _BOOKED_CLAIM.search(reply or "") and not booking_proven:
-        hits.append("false-booking")
-    if dup_hits >= 3:
-        hits.append("text-duplicates-card")
-    if speculative and any(p in low for p in _SPECULATIVE):
-        hits.append("speculation")
-    return hits
-
-
-def _dup_count(reply: str, card: dict) -> int:
-    """Count card facts (names, dates, times) repeated in the reply text."""
-    if not card or not isinstance(card.get("items"), list):
-        return 0
-    low = (reply or "").lower()
-    n = 0
-    for it in card["items"]:
-        if not isinstance(it, dict):
-            continue
-        for key in ("doctor_name", "name", "hospital_name", "title"):
-            v = str(it.get(key, "")).strip()
-            if len(v) > 3 and v.lower() in low:
-                n += 1
-        for key in ("starts_at", "ends_at"):
-            v = str(it.get(key, ""))
-            m = re.search(r"(\d{4}-\d{2}-\d{2})", v)
-            if m and m.group(1) in (reply or ""):
-                n += 1
-            m = re.search(r"T(\d{2}:\d{2})", v)
-            if m and (m.group(1) in low or _hm_alt(m.group(1)) in low):
-                n += 1
-    return n
-
-
-def _hm_alt(hm: str) -> str:
-    try:
-        h, m = int(hm[:2]), hm[3:5]
-        ap = "am" if h < 12 else "pm"
-        h12 = h % 12 or 12
-        return f"{h12}:{m} {ap}"
-    except Exception:
-        return hm
 
 
 def _slot_label(starts_at: str) -> str:
@@ -102,80 +22,180 @@ def _slot_label(starts_at: str) -> str:
         return str(starts_at)
 
 
+def _has_list_payload(data: dict) -> bool:
+    """True when data holds at least one non-empty list of dicts (cardable)."""
+    if not isinstance(data, dict):
+        return False
+    return any(isinstance(v, list) and v and isinstance(v[0], dict)
+               for v in data.values())
+
+
 def _card(tool: str, data: dict, doctor_name: str = "") -> dict:
-    """Build card payload from verified tool data. Every actionable item gets
-    `actions: [{label, text}]` — tapping sends `text` as the next user message.
-    Fully data-driven: labels/texts are composed from item fields only."""
+    """Generic card builder: delegates to orchestration.build_card() which
+    renders ANY tool's list payload with registry-derived follow-up actions.
+    No per-tool branches — new tools render with zero changes here."""
+    from app.ai_assistant import orchestration as orch
+
     if not isinstance(data, dict):
         return {}
-    if tool in ("search_doctors",) and isinstance(data.get("doctors"), list):
-        items = []
-        for d in data["doctors"][:6]:
-            name = d.get("doctor_name", d.get("name", "this doctor"))
-            hosp = d.get("hospital_name", "")
-            where = f" at {hosp}" if hosp else ""
-            items.append({**d, "actions": [
-                {"label": "Check availability", "text": f"Check availability for {name}{where}"},
-                {"label": "Book", "text": f"Book appointment with {name}{where}"},
-            ]})
-        return {"card": "doctors", "items": items}
-    if tool in ("search_hospitals",) and isinstance(data.get("hospitals"), list):
-        items = []
-        for h in data["hospitals"][:6]:
-            name = h.get("hospital_name", h.get("name", "this hospital"))
-            items.append({**h, "actions": [
-                {"label": "View doctors", "text": f"Show doctors at {name}"},
-            ]})
-        return {"card": "hospitals", "items": items}
-    if tool in ("check_availability",) and isinstance(data.get("slots"), list):
-        items = []
-        for s in data["slots"][:8]:
-            who = f" with {doctor_name}" if doctor_name else ""
-            items.append({**s, "actions": [
-                {"label": f"Book {_slot_label(s.get('starts_at', ''))}",
-                 "text": f"Book {_slot_label(s.get('starts_at', ''))}{who}"},
-            ]})
-        return {"card": "slots", "items": items,
-                "doctor_id": data.get("doctor_id")}
-    if tool in ("create_appointment", "reschedule_appointment", "cancel_appointment",
-                "get_appointment"):
-        if data.get("appointment_id") or data.get("id"):
-            aid = data.get("appointment_id") or data.get("id")
-            return {"card": "appointment", "items": [{**data, "actions": [
-                {"label": "Reschedule", "text": f"Reschedule appointment #{aid}"},
-                {"label": "Cancel", "text": f"Cancel appointment #{aid}"},
-            ]}]}
-    if tool in ("get_questionnaire",) and data.get("id"):
-        return {"card": "questionnaire", "items": [{**data, "actions": [
-            {"label": "Answer", "text": f"Start questionnaire {data.get('title', '')}".strip()},
-        ]}]}
-    if tool in ("list_my_questionnaires",) and isinstance(data.get("questionnaires"), list):
-        items = []
-        for q in data["questionnaires"][:6]:
-            items.append({**q, "actions": [
-                {"label": "Fill", "text": f"Fill questionnaire {q.get('title', '')}".strip()},
-            ]})
-        return {"card": "questionnaires", "items": items}
-    if tool in ("list_my_appointments",) and isinstance(data.get("appointments"), list):
-        items = []
-        for a in data["appointments"][:6]:
-            items.append({**a, "actions": [
-                {"label": "Details", "text": f"Show details of appointment #{a.get('id')}"},
-            ]})
-        return {"card": "appointments", "items": items}
-    if tool in ("get_reviews",) and isinstance(data.get("reviews"), list):
-        return {"card": "reviews", "items": data["reviews"][:5],
-                "avg": data.get("avg"), "count": data.get("count")}
-    return {}
+    card = orch.build_card(tool, data)
+    # Slot labels stay human-readable using the contextual doctor name.
+    if card.get("card") == "slots" and doctor_name:
+        for it in card.get("items", []):
+            for a in it.get("actions", []):
+                if a.get("text") and doctor_name not in a["text"]:
+                    a["text"] = f"{a['text']} with {doctor_name}"
+    # Legacy kind aliases keep the existing frontend renderer working.
+    aliases = {"doctor": "doctors", "hospital": "hospitals", "slot": "slots",
+               "appointment": "appointment", "questionnaire": "questionnaires",
+               "review": "reviews"}
+    kind = str(card.get("card", ""))
+    if kind in aliases:
+        card["card"] = aliases[kind]
+    return card
 
 
-def _options(state: dict) -> list[dict]:
-    """Tappable input options when the assistant needs a reply. Built only from
-    state (clarification fields, prior tool data, transactional memory)."""
+async def _llm_options(state: dict, card: dict) -> list[dict]:
+    """LLM-generated tappable options from live state (no fixed day lists).
+
+    Falls back to data-driven candidates (verified doctors/appointments)
+    when the LLM is unavailable — never to hardcoded Today/Tomorrow words.
+    """
+    from app.ai_assistant.services import llm as llm_mod
+
     safety = state.get("safety") or {}
     if safety.get("verdict") == "escalate":
         if (state.get("transfer") or {}).get("escalated"):
-            return []  # already logged this turn — no duplicate records
+            return []
+        # Escalation confirmation is a structural flow, worded by the LLM
+        # response itself; keep minimal affirmative actions data-driven.
+        return [
+            {"label": "Yes", "text": "Yes"},
+            {"label": "Not now", "text": "Not now"},
+        ]
+    fields = state.get("pending_clarification_fields") or []
+    if not fields:
+        return []
+    # Data-driven candidates from verified outputs (global, any language).
+    cands: list[dict] = []
+
+    def _doctors():
+        for s in reversed(state.get("step_outputs") or []):
+            docs = (s.get("data") or {}).get("doctors")
+            if isinstance(docs, list) and docs:
+                return docs[:3]
+        return []
+
+    def _appts():
+        for s in reversed(state.get("step_outputs") or []):
+            appts = (s.get("data") or {}).get("appointments")
+            if isinstance(appts, list) and appts:
+                return appts[:3]
+        return []
+
+    cand_text = json.dumps({"fields": fields,
+                            "doctors": _doctors(),
+                            "appointments": _appts()})[:1500]
+    try:
+        res = await llm_mod.generate(
+            [{"role": "user", "content": f"Fields missing: {fields}. Candidates: {cand_text}. "
+              "Reply JSON only: {\"options\": [{\"label\": \"\", \"text\": \"\"}]}. "
+              "Max 4 options, each text must be sendable as the next user message "
+              "in the user's language. Use candidate names verbatim."}],
+            system="You generate tappable reply options. JSON only.")
+        try:
+            data = json.loads(res.content)
+        except Exception:
+            s, e = res.content.find("{"), res.content.rfind("}")
+            data = json.loads(res.content[s:e + 1]) if s >= 0 and e > s else {}
+        opts = data.get("options", [])
+        if isinstance(opts, list):
+            out = [{"label": str(o.get("label", ""))[:60],
+                    "text": str(o.get("text", ""))[:200]}
+                   for o in opts if isinstance(o, dict) and o.get("text")]
+            # De-dup preserve order, cap 4.
+            seen, uniq = set(), []
+            for o in out:
+                if o["text"] not in seen:
+                    seen.add(o["text"])
+                    uniq.append(o)
+            return uniq[:4]
+    except Exception:
+        pass
+    # Fallback: raw candidates as options (no hardcoded words).
+    out: list[dict] = []
+    for d in _doctors():
+        name = d.get("doctor_name", d.get("name", ""))
+        hosp = d.get("hospital_name", "")
+        if name:
+            out.append({"label": f"{name}" + (f" · {hosp}" if hosp else ""),
+                        "text": f"{name}" + (f" at {hosp}" if hosp else "")})
+    for a in _appts():
+        out.append({"label": f"Appointment #{a.get('id')}",
+                    "text": f"Appointment #{a.get('id')}"})
+    seen, uniq = set(), []
+    for o in out:
+        if o["text"] not in seen:
+            seen.add(o["text"])
+            uniq.append(o)
+    return uniq[:4]
+
+
+# ---- Back-compat shims for tests / callers (LLM-first semantics) ----
+
+def violations(reply: str, tool_ok: bool, booking_proven: bool = False,
+               dup_hits: int = 0, speculative: bool = False,
+               data: dict | None = None) -> list[str]:
+    """Structural guard only: flag unproven record claims.
+
+    Language-agnostic and data-aware: a concrete reference (#<digits>) is
+    fine when that id exists anywhere in the verified tool output (e.g. an
+    escalation reference number); it is flagged only when the cited number
+    matches nothing the tools returned — no word lists in any language.
+    The async path (_needs_rewrite) adds LLM wording review on top.
+    """
+    import re as _re
+    if booking_proven:
+        return []
+    refs = set(_re.findall(r"#\s*(\d+)", reply or ""))
+    if not refs:
+        return []
+    known: set[str] = set()
+
+    def _collect(v):
+        if isinstance(v, dict):
+            for x in v.values():
+                _collect(x)
+        elif isinstance(v, list):
+            for x in v:
+                _collect(x)
+        elif isinstance(v, int):
+            known.add(str(v))
+        elif isinstance(v, str) and v.isdigit():
+            known.add(v.lstrip("0") or "0")
+
+    _collect(data or {})
+    if refs <= {n.lstrip("0") or "0" for n in known} | known:
+        return []
+    return ["false-booking"]
+
+
+def _dup_count(reply: str, card: dict) -> int:
+    """Kept for compatibility: duplication is now handled by the LLM prompt
+    (card_will_render -> one short line). Always returns 0 (no penalty)."""
+    return 0
+
+
+def _options(state: dict) -> list[dict]:
+    """Sync compat: data-driven candidates only (no hardcoded day lists).
+
+    Async path uses _llm_options. This returns verified doctors/appointments
+    as options, or [] — never Today/Tomorrow/This week constants.
+    """
+    safety = state.get("safety") or {}
+    if safety.get("verdict") == "escalate":
+        if (state.get("transfer") or {}).get("escalated"):
+            return []
         return [
             {"label": "Yes, log it", "text": "Yes, log this for the care team"},
             {"label": "Not now", "text": "No thanks"},
@@ -183,12 +203,6 @@ def _options(state: dict) -> list[dict]:
     fields = state.get("pending_clarification_fields") or []
     if not fields:
         return []
-    tx = (state.get("context_refs") or {}).get("transactional") or {}
-    if isinstance(tx, str):
-        try:
-            tx = json.loads(tx)
-        except Exception:
-            tx = {}
     opts: list[dict] = []
 
     def _doctors():
@@ -213,26 +227,45 @@ def _options(state: dict) -> list[dict]:
                 continue
             where = f" at {hosp}" if hosp else ""
             opts.append({"label": f"{name}{where}", "text": f"{name}{where}"})
-    if "appointment" in fields or "new_time" in fields:
+    if "appointment" in fields or "new_time" in fields or "appointment_or_form" in fields:
         for a in _appts():
-            opts.append({"label": f"Appt #{a.get('id')} {_slot_label(a.get('starts_at', ''))}",
+            opts.append({"label": f"Appt #{a.get('id')}",
                          "text": f"Appointment #{a.get('id')}"})
-    if "date_hint" in fields or "new_time" in fields:
-        if tx.get("date_iso"):
-            for part in ("Morning", "Afternoon", "Evening"):
-                opts.append({"label": part, "text": part})
-        else:
-            for day in ("Today", "Tomorrow", "This week"):
-                opts.append({"label": day, "text": day})
-    if "appointment_or_form" in fields:
-        for a in _appts():
-            opts.append({"label": f"Appt #{a.get('id')}", "text": f"Appointment #{a.get('id')}"})
     seen, unique = set(), []
     for o in opts:
         if o["text"] not in seen:
             seen.add(o["text"])
             unique.append(o)
     return unique[:4]
+
+
+async def _needs_rewrite(reply: str, tool_ok: bool, booking_proven: bool,
+                         has_data: bool) -> bool:
+    """LLM self-check: does the reply claim background work, live-agent
+    promises, or unproven bookings? Pure LLM, no word lists."""
+    from app.ai_assistant.services import llm as llm_mod
+
+    if booking_proven:
+        return False
+    try:
+        res = await llm_mod.generate(
+            [{"role": "user", "content": (
+                "Reply text: " + reply[:1500] +
+                f"\nFlags: tool_ok={tool_ok} booking_proven={booking_proven} has_data={has_data}. "
+                "Does this text (in ANY language) claim (a) an appointment is booked/confirmed "
+                "without proof, or (b) a live human agent/handoff/callback/phone/portal action, "
+                "or (c) background work ('securing/ reviewing records') not in tool data? "
+                'Reply JSON only: {"rewrite": true|false}.')}],
+            system="You audit assistant replies. JSON only.")
+        try:
+            data = json.loads(res.content)
+        except Exception:
+            s, e = res.content.find("{"), res.content.rfind("}")
+            data = json.loads(res.content[s:e + 1]) if s >= 0 and e > s else {}
+        return bool(data.get("rewrite", False))
+    except Exception:
+        # Fail-open to old structural shim (never block on auditor failure).
+        return bool(violations(reply, tool_ok, booking_proven))
 
 
 async def run(state: dict) -> dict:
@@ -249,15 +282,40 @@ async def run(state: dict) -> dict:
     data = result.get("data", {}) if isinstance(result.get("data"), dict) else {}
     # Build the card BEFORE the reply so the LLM knows details render in cards.
     card_tool = tool or state.get("last_tool", "")
-    doctor_name = ""
-    if card_tool == "check_availability":
+    # Display name for slot labels: resolved from verified output by field,
+    # never by tool name. Falls back to a DB lookup on doctor_id if present.
+    doctor_name = str((data or {}).get("doctor_name", "") or "")
+    if not doctor_name and (data or {}).get("doctor_id"):
         try:
             from app.models import Doctor
-            did = (data or {}).get("doctor_id") or 0
-            d = db.query(Doctor).filter(Doctor.id == int(did)).first()
+            d = db.query(Doctor).filter(
+                Doctor.id == int((data or {}).get("doctor_id") or 0)).first()
             doctor_name = d.name if d else ""
         except Exception:
             doctor_name = ""
+    from app.ai_assistant import orchestration as _orch_ui
+    # LLM-designed UI first (full-LLM chat templates), deterministic
+    # build_card as the fallback. UI data/doctor may come from a previous
+    # plan step when the last tool returned no list payload.
+    ui_source = data if _has_list_payload(data) else {}
+    ui_tool = card_tool
+    if not ui_source:
+        for s in reversed(state.get("step_outputs") or []):
+            sdata = (s or {}).get("data", {})
+            if _has_list_payload(sdata):
+                ui_source, ui_tool = sdata, (s or {}).get("tool", "")
+                break
+    _cls = state.get("classification") or {}
+    _lang = str(_cls.get("language", "")) if isinstance(_cls, dict) else ""
+    ui: dict = {}
+    if ui_source:
+        try:
+            raw_ui = await _orch_ui.build_ui_llm(
+                ui_tool, ui_source, language=_lang, doctor_name=doctor_name)
+            ui = _orch_ui.validate_ui(raw_ui, ui_source)
+        except Exception:
+            ui = {}
+    trace_ui = f"ui:{'llm' if ui else 'fallback'}"
     card = _card(card_tool, data, doctor_name)
     if not card:
         # Fall back to the last successful plan step (partial multi-step results).
@@ -265,9 +323,11 @@ async def run(state: dict) -> dict:
             card = _card(s.get("tool", ""), s.get("data", {}), doctor_name)
             if card:
                 break
+    cls = state.get("classification") or {}
     hints = {
         "safety": safety, "intent": state.get("intent"),
-        "classification": state.get("classification"),
+        "classification": cls,
+        "language": cls.get("language", ""),
         "scope": state.get("scope_hint", ""),
         "clarify_fields": state.get("pending_clarification_fields", []),
         "tool": tool, "tool_status": state.get("tool_status", ""),
@@ -276,8 +336,8 @@ async def run(state: dict) -> dict:
         "missing_tool": state.get("missing_tool", {}),
         "transfer": state.get("transfer", {}),
         "summary": state.get("conversation_summary", ""),
-        "card_will_render": bool(card),
-        "card_kind": (card or {}).get("card", ""),
+        "card_will_render": bool(ui or card),
+        "card_kind": (ui or {}).get("kind", "") or (card or {}).get("card", ""),
     }
     messages = [{"role": "system", "content": ADMIN_SYSTEM}]
     if state.get("conversation_summary"):
@@ -293,38 +353,27 @@ async def run(state: dict) -> dict:
     except Exception:
         raise
     reply = res.content.strip()
-    if _CLINICAL_OUT.search(reply):
-        fix = await llm_mod.generate(
-            [{"role": "user", "content": "Rewrite without any clinical conclusion. "
-              "Echo only patient-reported words as theirs. Text: " + reply[:2000]}],
-            system=ADMIN_SYSTEM)
-        reply = fix.content.strip()
-        res = fix
     tool_ok = bool((state.get("tool_result") or {}).get("ok"))
     if not tool:
-        # Clarification-pending turns have no tool yet — a "don't have
-        # access" reply there is a false denial (must ask the missing
-        # question instead), so mark not-ok to trigger the rewrite.
         tool_ok = not bool(state.get("missing_tool") or state.get("scope_hint")
                            or state.get("pending_clarification_fields"))
+    from app.ai_assistant import orchestration as _orch
     booking_proven = (
-        tool == "create_appointment" and bool((state.get("tool_result") or {}).get("ok"))
-        and bool((data or {}).get("verified") or (data or {}).get("appointment_id")))
+        bool((state.get("tool_result") or {}).get("ok"))
+        and _orch.is_proven_result(tool or state.get("last_tool", ""), data))
     has_data = bool(data) and tool_ok
-    dup = _dup_count(reply, card) if card else 0
-    if violations(reply, tool_ok, booking_proven, dup, speculative=not has_data):
+    if await _needs_rewrite(reply, tool_ok, booking_proven, has_data):
         fix = await llm_mod.generate(
             [{"role": "user", "content": (
-                "Rewrite this reply plainly: open with the answer, no 'You reported' opener, "
-                "no claims about background work or record reviews, no phone/portal referrals, "
-                "no capability denials when tools exist, and never claim an appointment is "
+                "Rewrite this reply in the user's language: open with the answer, "
+                "ground every fact in verified tool data, never claim an appointment is "
                 "booked/confirmed unless the tool result proves it. There is NO live human "
                 "agent: never promise a connection, handoff, callback, or follow-up — "
                 "escalation means a tracked request logged for the care team, cited by its "
                 "reference number when present. If a card renders the "
-                "details, keep the reply to ONE short line and do not repeat names, times, "
-                "or lists. When no tool data exists, state the fact plainly and offer a "
-                "human — never suggest other providers, dates, or workarounds. Text: "
+                "details, keep the reply to ONE short line. When no tool data exists, "
+                "state the fact plainly and offer a tracked request — never invent "
+                "providers, dates, or workarounds. Text: "
                 + reply[:2000])}],
             system=ADMIN_SYSTEM)
         if fix.content.strip():
@@ -333,9 +382,14 @@ async def run(state: dict) -> dict:
     db.add(AIMessage(conversation_id=state.get("conversation_id"), role="assistant",
                      content=reply[:4000], latency_ms=int((time.time() - t0) * 1000)))
     db.commit()
-    trace = [*state.get("trace", []), f"response:{res.powered_by}"]
-    options = _options(state)
+    trace = [*state.get("trace", []), f"response:{res.powered_by}", trace_ui]
+    try:
+        options = await _llm_options(state, card)
+    except Exception:
+        options = _options(state)
     payload = {}
+    if ui:
+        payload["ui"] = ui
     if card:
         payload["card"] = card["card"]
         payload.update({k: v for k, v in card.items() if k != "card"})

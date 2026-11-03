@@ -80,7 +80,7 @@ def topup(db: Session):
             a = models.Appointment(hospital_id=d.hospital_id, doctor_id=d.id, patient_id=p.id,
                 starts_at=st0, ends_at=st0 + timedelta(minutes=30), status="confirmed",
                 reason="Follow-up visit", idempotency_key=key, correlation_id=f"seedf{i}",
-                external_appointment_id=f"ext-appt-future-{i}", integration_status="synced")
+                )
             db.add(a); db.commit()
             db.add(models.AppointmentHistory(appointment_id=a.id, from_status="requested", to_status="confirmed", actor="seed", correlation_id=f"seedf{i}")); db.commit()
     # one completed questionnaire response for doctor review demo
@@ -131,9 +131,8 @@ def _seed_demo_applications(db: Session):
             latitude=lat, longitude=lng,
             phone="+1-555-0142", contact_email=f"admin@{slug}.org",
             operating_hours=json.dumps({"mon": [["09:00", "17:00"]], "tue": [["09:00", "17:00"]], "wed": [["09:00", "17:00"]], "thu": [["09:00", "17:00"]], "fri": [["09:00", "15:00"]]}),
-            services=json.dumps(["outpatient", "lab"]), ehr_vendor="mock",
+            services=json.dumps(["outpatient", "lab"]),
             cover_url=hospital_cover_for(slug), review_notes=note,
-            external_facility_id=f"ext-fac-{slug}",
         )
         db.add(h); db.commit(); db.refresh(h)
         email = f"admin@{slug}.org"
@@ -221,7 +220,7 @@ def _full_seed(db: Session):
         hours = json.dumps({"mon":[["09:00","17:00"]],"tue":[["09:00","17:00"]],"wed":[["09:00","17:00"]],"thu":[["09:00","17:00"]],"fri":[["09:00","15:00"]]})
         lat, lng = DEMO_COORDS.get(slug, (None, None))
         if not h:
-            h = models.Hospital(name=name, slug=slug, status=status, address=addr, city=city, latitude=lat, longitude=lng, phone="+1-555-0100", contact_email=f"admin@{slug}.org", operating_hours=hours, services=json.dumps(["outpatient","imaging","lab"]), ehr_vendor="mock", cover_url=hospital_cover_for(slug), external_facility_id=f"ext-fac-{slug}")
+            h = models.Hospital(name=name, slug=slug, status=status, address=addr, city=city, latitude=lat, longitude=lng, phone="+1-555-0100", contact_email=f"admin@{slug}.org", operating_hours=hours, services=json.dumps(["outpatient","imaging","lab"]), cover_url=hospital_cover_for(slug))
             db.add(h); db.commit(); db.refresh(h)
         elif not getattr(h, "cover_url", None):
             try:
@@ -240,8 +239,7 @@ def _full_seed(db: Session):
                 db.add(models.Specialty(hospital_id=h.id, name=s))
         db.commit()
         _u(db, f"admin@{h.slug}.org", "hospital_admin", f"{h.name} Admin", hospital_id=h.id)
-        if not db.query(models.HealthcareConnection).filter(models.HealthcareConnection.hospital_id==h.id).first():
-            db.add(models.HealthcareConnection(hospital_id=h.id, vendor="mock", base_url="http://mock-ehr:8001", status="active", config_json="{}"))
+        pass  # no external connections
         for at, dur in [("General Consultation",30),("Follow-up",15),("Specialist Consultation",45)]:
             if not db.query(models.AppointmentType).filter(models.AppointmentType.hospital_id==h.id, models.AppointmentType.name==at).first():
                 db.add(models.AppointmentType(hospital_id=h.id, name=at, duration_minutes=dur))
@@ -260,7 +258,7 @@ def _full_seed(db: Session):
         for name, spec, exp in doc_names[:4 if h.slug.startswith("city") else 3]:
             if db.query(models.Doctor).filter(models.Doctor.hospital_id==h.id, models.Doctor.name==name).first(): continue
             sp = db.query(models.Specialty).filter(models.Specialty.hospital_id==h.id, models.Specialty.name==spec).first()
-            d = models.Doctor(hospital_id=h.id, name=name, specialty_id=sp.id if sp else None, qualifications=f"MD, {spec}", experience_years=exp, languages=json.dumps(["English","Hindi"] if k % 2 == 0 else ["English"]), consultation_types=json.dumps(["in_person","video"]), duration_minutes=30, status="active", external_provider_id=f"ext-prov-{h.slug}-{k}", rating=round(4.3+random.random()*0.6,1), photo_url=DOCTOR_PHOTOS[k % len(DOCTOR_PHOTOS)])
+            d = models.Doctor(hospital_id=h.id, name=name, specialty_id=sp.id if sp else None, qualifications=f"MD, {spec}", experience_years=exp, languages=json.dumps(["English","Hindi"] if k % 2 == 0 else ["English"]), consultation_types=json.dumps(["in_person","video"]), duration_minutes=30, status="active", rating=round(4.3+random.random()*0.6,1), photo_url=DOCTOR_PHOTOS[k % len(DOCTOR_PHOTOS)])
             db.add(d); db.commit(); db.refresh(d)
             _u(db, f"doc{k}@example.org", "doctor", name, hospital_id=h.id, doctor_id=d.id)
             cal = models.Calendar(hospital_id=h.id, doctor_id=d.id, name="Main", is_active=True, working_hours=json.dumps({"mon":[["09:00","17:00"]],"tue":[["09:00","17:00"]],"wed":[["09:00","17:00"]],"thu":[["09:00","17:00"]],"fri":[["09:00","15:00"]]}))
@@ -278,7 +276,7 @@ def _full_seed(db: Session):
     for i, (nm, em) in enumerate([("Aarav Sharma","aarav@example.org"),("Emily Chen","emily@example.org"),("John Carter","john@example.org"),("Priya Nair","priya@example.org")]):
         p = db.query(models.Patient).filter(models.Patient.email==em).first()
         if not p:
-            p = models.Patient(full_name=nm, email=em, phone=f"+1-555-010{i}", external_patient_id=f"ext-pat-{i}", home_hospital_id=h_objs[0].id)
+            p = models.Patient(full_name=nm, email=em, phone=f"+1-555-010{i}", home_hospital_id=h_objs[0].id)
             db.add(p); db.commit(); db.refresh(p)
             _u(db, em, "patient", nm, patient_id=p.id)
             db.add(models.UserContextPref(user_id=db.query(models.User).filter(models.User.email==em).first().id, prefs=json.dumps({"channel":"web","language":"en"})))
@@ -291,15 +289,10 @@ def _full_seed(db: Session):
             d = docs[i % len(docs)]; p = pats[i % len(pats)]
             st0 = (now + timedelta(days=i-6)).replace(hour=10+(i%5), minute=0, second=0, microsecond=0)
             if db.query(models.Appointment).filter(models.Appointment.idempotency_key==f"seed-{i}").first(): continue
-            a = models.Appointment(hospital_id=d.hospital_id, doctor_id=d.id, patient_id=p.id, starts_at=st0, ends_at=st0+timedelta(minutes=30), status=st, reason="Seed visit", idempotency_key=f"seed-{i}", correlation_id=f"seed{i}", external_appointment_id=f"ext-appt-seed-{i}", integration_status="synced")
+            a = models.Appointment(hospital_id=d.hospital_id, doctor_id=d.id, patient_id=p.id, starts_at=st0, ends_at=st0+timedelta(minutes=30), status=st, reason="Seed visit", idempotency_key=f"seed-{i}", correlation_id=f"seed{i}")
             db.add(a); db.commit()
             db.add(models.AppointmentHistory(appointment_id=a.id, from_status="requested", to_status=st, actor="seed", correlation_id=f"seed{i}")); db.commit()
-        d = docs[0]; p = pats[0]; st0 = (now+timedelta(days=1)).replace(hour=15, minute=0, second=0, microsecond=0)
-        if not db.query(models.Appointment).filter(models.Appointment.idempotency_key=="seed-recon").first():
-            a = models.Appointment(hospital_id=d.hospital_id, doctor_id=d.id, patient_id=p.id, starts_at=st0, ends_at=st0+timedelta(minutes=30), status="reconciliation_required", reason="Timeout demo", idempotency_key="seed-recon", correlation_id="seedrecon", integration_status="unknown_outcome")
-            db.add(a); db.commit()
-            db.add(models.ReconciliationRecord(hospital_id=d.hospital_id, appointment_id=a.id, issue="unknown_outcome_not_found", status="open", correlation_id="seedrecon")); db.commit()
-            db.add(models.IntegrationOperation(hospital_id=d.hospital_id, kind="create", ref_type="appointment", ref_id=a.id, status="unknown_outcome", error="Simulated timeout", idempotency_key="seed-recon", correlation_id="seedrecon")); db.commit()
+        pass  # no extra demo rows
     if db.query(models.Notification).count() == 0:
         for i in range(6):
             db.add(models.Notification(hospital_id=h_objs[0].id, kind="appointment_confirmation", title=f"Reminder: visit #{i+1}", body="Your visit is coming up. Reply here if you need to reschedule.", status="sent"))

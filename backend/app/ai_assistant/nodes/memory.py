@@ -36,22 +36,21 @@ async def run(state: dict) -> dict:
         ctx.conversational = json.dumps(cur)
         db.commit()
     out = {"conversation_summary": new_summary[:1200], "trace": trace}
-    if state.get("intent") in ("book", "reschedule", "cancel", "lookup",
-                               "questionnaire", "admin_q", "ambiguous"):
-        try:
-            prior_tx = {}
-            if ctx:
-                try:
-                    prior_tx = json.loads(ctx.transactional or "{}")
-                except Exception:
-                    prior_tx = {}
-            merged = await llm_mod.extract_entities(
-                [r.content for r in reversed(rows)], prior_tx)
-            if ctx and merged != prior_tx:
-                ctx.transactional = json.dumps(merged)
-                db.commit()
-            out["context_refs"] = {**(state.get("context_refs") or {}),
-                                   "transactional": merged}
-        except Exception:
-            pass
+    # Global: every turn can carry entities (any intent, any language).
+    try:
+        prior_tx = {}
+        if ctx:
+            try:
+                prior_tx = json.loads(ctx.transactional or "{}")
+            except Exception:
+                prior_tx = {}
+        merged = await llm_mod.extract_entities(
+            [r.content for r in reversed(rows)], prior_tx)
+        if ctx and merged != prior_tx:
+            ctx.transactional = json.dumps(merged)
+            db.commit()
+        out["context_refs"] = {**(state.get("context_refs") or {}),
+                               "transactional": merged}
+    except Exception:
+        pass
     return out

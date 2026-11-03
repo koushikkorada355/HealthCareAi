@@ -30,7 +30,7 @@ def _user(role="patient", patient_id=None, hospital_id=None):
 
 
 def _seed(db):
-    h = models.Hospital(name="H", slug="hup", status="approved", external_facility_id="f1")
+    h = models.Hospital(name="H", slug="hup", status="approved")
     db.add(h); db.commit()
     d = models.Doctor(hospital_id=h.id, name="Dr T", status="active", duration_minutes=30)
     db.add(d); db.commit()

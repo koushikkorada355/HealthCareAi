@@ -20,7 +20,7 @@ def create_w(body: dict, db: Session = Depends(get_db), u=Depends(get_current_us
     w = models.Workflow(hospital_id=body.get("hospital_id") or u.hospital_id, name=body["name"], trigger_event=body["trigger_event"], steps_json=json.dumps(body.get("steps",[])), is_active=True)
     db.add(w); db.commit(); db.refresh(w); return {"id": w.id}
 
-ALLOWED_WF_TRIGGERS = {"appointment.booked", "appointment.cancelled", "appointment.rescheduled", "questionnaire.completed", "reconciliation.required", "hospital.approved", "ehr.recovered"}
+ALLOWED_WF_TRIGGERS = {"appointment.booked", "appointment.cancelled", "appointment.rescheduled", "questionnaire.completed", "hospital.approved"}
 
 @router.patch("/workflows/{wid}")
 def patch_w(wid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_current_user)):

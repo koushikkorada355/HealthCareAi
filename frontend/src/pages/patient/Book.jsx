@@ -5,22 +5,9 @@ import { Card, Pill, Avatar, Empty } from '../../components/ui.jsx'
 import { hospitalCover } from '../../utils/photos.js'
 import SlotPicker from './SlotPicker.jsx'
 
-const SPECIALTIES = ['All', 'Orthopedics', 'Cardiology', 'Dermatology', 'Neurology', 'Pediatrics', 'General Medicine']
-
-const PROBLEM_CHIPS = ['Shoulder pain', 'Skin rash', 'Heart concern', 'Child fever', 'Headache', 'General checkup']
-const DAY_OPTS = ['Any day', 'Today', 'Tomorrow', 'This week']
-
-/* Guess specialty from the patient's own words (same mapping the backend uses). */
-function detectSpec(text) {
-  const t = (text || '').toLowerCase()
-  if (/(shoulder|knee|joint|bone|fracture|back pain|neck|ankle|hip|muscle|sprain|orthop)/.test(t)) return 'Orthopedics'
-  if (/(skin|rash|acne|eczema|hair|mole|dermat)/.test(t)) return 'Dermatology'
-  if (/(heart|chest|blood pressure|cholesterol|palpitat|cardi)/.test(t)) return 'Cardiology'
-  if (/(child|baby|kid|infant|toddler|pediatr)/.test(t)) return 'Pediatrics'
-  if (/(headache|migraine|brain|nerve|seizure|dizz|neur)/.test(t)) return 'Neurology'
-  if (/(fever|cold|cough|flu|checkup|general|stomach|diabet|thyroid)/.test(t)) return 'General Medicine'
-  return ''
-}
+/* Global: specialties + hospitals load from the backend catalog.
+   No hardcoded specialty lists, symptom maps, or example chips.
+   The AI chat remains the LLM entry for free-text understanding. */
 
 function Steps({ step }) {
   return (
@@ -36,39 +23,54 @@ function Steps({ step }) {
 export function BookFind() {
   const [hospitals, setHospitals] = useState([])
   const [doctors, setDoctors] = useState([])
+  const [specialties, setSpecialties] = useState(['All'])
   const [q, setQ] = useState('')
   const [spec, setSpec] = useState('All')
-  const [specTouched, setSpecTouched] = useState(false)
   const [hospId, setHospId] = useState('')
   const [loading, setLoading] = useState(true)
   // intake-first: the page asks about the visit BEFORE showing any doctor
   const [stage, setStage] = useState('intake') // intake | results
   const [problem, setProblem] = useState('')
-  const [dayPref, setDayPref] = useState('Any day')
+  const [dayPref, setDayPref] = useState('')
+  const [dayOpts, setDayOpts] = useState([])
   const [intakeErr, setIntakeErr] = useState('')
   const nav = useNavigate()
 
   useEffect(() => {
-    Promise.all([api('/hospitals').catch(() => []), api('/doctors').catch(() => [])])
-      .then(([h, d]) => { setHospitals(h || []); setDoctors(d || []) })
+    Promise.all([
+      api('/hospitals').catch(() => []),
+      api('/doctors').catch(() => []),
+      api('/specialties').catch(() => null),
+    ])
+      .then(([h, d, s]) => {
+        setHospitals(h || []); setDoctors(d || [])
+        // Dynamic specialty catalog: backend list or derived from doctors.
+        const fromApi = Array.isArray(s) ? s.map(x => x?.name || x).filter(Boolean)
+          : Array.isArray(s?.specialties) ? s.specialties.map(x => x?.name || x).filter(Boolean) : []
+        const derived = [...new Set((d || []).map(x => x.specialty).filter(Boolean))].sort()
+        const list = ['All', ...new Set([...fromApi, ...derived])]
+        setSpecialties(list.length ? list : ['All'])
+        // Dynamic day options: next 7 days localized, no hardcoded words.
+        try {
+          const fmt = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+          const opts = [{ id: '', label: 'Any day' }]
+          for (let i = 0; i < 7; i++) {
+            const dt = new Date(); dt.setDate(dt.getDate() + i)
+            opts.push({ id: dt.toDateString(), label: i === 0 ? `Today · ${fmt.format(dt)}` : fmt.format(dt) })
+          }
+          setDayOpts(opts)
+        } catch { setDayOpts([{ id: '', label: 'Any day' }]) }
+      })
       .finally(() => setLoading(false))
   }, [])
 
-  const onProblem = (v) => {
-    setProblem(v); setIntakeErr('')
-    if (!v.trim()) { setSpec('All'); setSpecTouched(false); return }
-    if (!specTouched) { const d = detectSpec(v); if (d) setSpec(d) }
-  }
-  const pickSpec = (s) => { setSpec(s); setSpecTouched(true) }
+  const onProblem = (v) => { setProblem(v); setIntakeErr('') }
+  const pickSpec = (s) => setSpec(s)
 
   const findDoctors = () => {
-    if (!problem.trim()) { setIntakeErr('Please describe your problem in a few words first — e.g. "shoulder pain since last week".'); return }
-    // Gibberish guard: text matching no known symptom/specialty with no manual
-    // chip pick must not degrade to "browse everything" — ask to pick or rephrase.
-    if (spec === 'All' && !specTouched && !detectSpec(problem)) {
-      setIntakeErr(`Sorry, we couldn't match “${problem.trim().slice(0, 60)}” to a specialty — pick one under question 2 or rephrase (e.g. joint pain, rash, fever).`)
-      return
-    }
+    if (!problem.trim()) { setIntakeErr('Please describe your visit in your own words, in any language.'); return }
+    // No gibberish guard, no symptom mapping: the LLM understands free text.
+    // Specialty/hospital/day are optional refinements, never blockers.
     try {
       sessionStorage.setItem('book_intake', JSON.stringify({ problem: problem.trim(), specialty: spec === 'All' ? '' : spec, hospId, dayPref }))
     } catch { /* private mode — intake just won't carry over */ }
@@ -106,18 +108,12 @@ export function BookFind() {
           <Card className="mt-4 max-w-2xl !p-5">
           <label htmlFor="book-problem" className="block text-xs font-bold tracking-wide">1 · WHAT IS THE PROBLEM? *</label>
           <textarea id="book-problem" className="input mt-1" rows={2}
-            placeholder='Describe it in your own words — e.g. "shoulder pain since last week"' value={problem} onChange={e => onProblem(e.target.value)} />
-          <div className="mt-2 flex flex-wrap gap-2">
-            {PROBLEM_CHIPS.map(c => (
-              <button key={c} type="button" onClick={() => onProblem(problem.trim() ? `${problem.trim()} + ${c.toLowerCase()}` : c)}
-                className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-ink transition hover:bg-brand-soft hover:text-brand-ink">+ {c}</button>
-            ))}
-          </div>
-          {detectSpec(problem) && <div className="mt-2 text-xs font-bold text-ink-soft">Looks like <span className="rounded-full bg-brand px-2 py-0.5 text-white">{detectSpec(problem)}</span> — you can change it below.</div>}
+            placeholder="Describe it in your own words, in any language" value={problem} onChange={e => onProblem(e.target.value)} />
+          <div className="mt-2 text-xs text-ink-soft">Tip: you can also <Link to="/app/assistant" className="font-bold text-brand-deep underline">ask the AI assistant</Link> — it understands free text.</div>
 
-          <div className="mt-4 text-xs font-bold tracking-wide">2 · WHICH SPECIALTY?</div>
+          <div className="mt-4 text-xs font-bold tracking-wide">2 · WHICH SPECIALTY? (optional)</div>
           <div className="mt-2 flex flex-wrap gap-2">
-            {SPECIALTIES.map(s => (
+            {specialties.map(s => (
               <button key={s} type="button" onClick={() => pickSpec(s)}
                 className={`rounded-full px-4 py-1.5 text-xs font-bold transition ${spec === s ? 'bg-brand text-white shadow-lift' : 'bg-slate-100 text-ink-soft hover:bg-brand-soft hover:text-brand-ink'}`}>{s}{spec === s ? ' ✓' : ''}</button>
             ))}
@@ -134,9 +130,9 @@ export function BookFind() {
             <div>
               <div className="text-xs font-bold tracking-wide">4 · PREFERRED DAY</div>
               <div className="mt-1 flex flex-wrap gap-1.5">
-                {DAY_OPTS.map(dy => (
-                  <button key={dy} type="button" onClick={() => setDayPref(dy)}
-                    className={`rounded-full px-3 py-2 text-xs font-bold transition ${dayPref === dy ? 'bg-brand text-white shadow-lift' : 'bg-slate-100 text-ink-soft hover:bg-brand-soft'}`}>{dy}</button>
+                {(dayOpts.length ? dayOpts : [{ id: '', label: 'Any day' }]).map(dy => (
+                  <button key={dy.label} type="button" onClick={() => setDayPref(dayPref === dy.id ? '' : dy.id)}
+                    className={`rounded-full px-3 py-2 text-xs font-bold transition ${dayPref === dy.id ? 'bg-brand text-white shadow-lift' : 'bg-slate-100 text-ink-soft hover:bg-brand-soft'}`}>{dy.label}</button>
                 ))}
               </div>
             </div>
@@ -250,7 +246,7 @@ export function BookSlots() {
           <span className="font-bold">Your visit:</span>
           <span className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand-ink">“{intake.problem}”</span>
           {intake.specialty && <span className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand-ink">{intake.specialty}</span>}
-          {intake.dayPref && intake.dayPref !== 'Any day' && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-ink-soft">slots: {intake.dayPref}</span>}
+          {intake.dayPref && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-ink-soft">slots: {intake.dayPref}</span>}
         </div>
       )}
       {doc ? (
@@ -268,7 +264,7 @@ export function BookSlots() {
 
       <div className="mt-5"><div className="mb-3 font-display text-xl font-semibold">Pick a time <span className="text-sm font-sans text-ink-soft">— click a slot to continue to details</span></div>
         {loading ? <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">{[0, 1, 2, 3, 4, 5].map(i => <div key={i} className="card p-4"><div className="skeleton h-5 w-2/3" /><div className="skeleton mt-2 h-4 w-1/2" /></div>)}</div>
-        : <SlotPicker doctorId={id} dayPref={intake?.dayPref || 'Any day'} onPick={goConfirm} />}
+        : <SlotPicker doctorId={id} dayPref={intake?.dayPref || ''} onPick={goConfirm} />}
       </div>
     </div>
   )

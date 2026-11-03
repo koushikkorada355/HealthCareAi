@@ -2,11 +2,11 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { HERO_IMG, HOSPITAL_COVERS } from '../../utils/photos.js'
 
-const STEPS = ['Patient request', 'AI understanding + context', 'Real availability', 'Authorized action (MCP)', 'EHR integration', 'External verification', 'State sync', 'Questionnaire + workflow', 'Doctor + admin visibility']
+const STEPS = ['Patient request', 'AI understanding + context', 'Real availability', 'Authorized action (MCP)', 'Questionnaire + workflow', 'Doctor + admin visibility']
 const PROOFS = [
   ['Real slots only', 'Every option comes from the scheduling engine — blocks, leave and conflicts respected.'],
-  ['Verified before confirmed', 'No “booked!” until the external record is read back and matched.'],
-  ['Failure-safe', 'Timeout → probe → sync without duplicates, visible to ops.'],
+  ['Verified before confirmed', 'No “booked!” until the slot is validated against blocks, leave and conflicts.'],
+  ['Failure-safe', 'Idempotent bookings — retries never create duplicates.'],
   ['Tenant-isolated', 'Hospital A never sees Hospital B data. Enforced server-side.'],
 ]
 
@@ -26,9 +26,9 @@ export default function Landing() {
       <main className="mx-auto max-w-6xl px-5 pb-16">
         <div className="grid items-center gap-8 md:grid-cols-2">
           <div className="animate-fade-up">
-            <div className="pill bg-brand-soft text-brand-ink mb-4">✦ AI-native · Verified bookings · Mock-EHR integrated</div>
+            <div className="pill bg-brand-soft text-brand-ink mb-4">✦ AI-native · Verified bookings</div>
             <h1 className="font-display text-4xl leading-[1.08] md:text-[52px]">Care, booked in <em className="bg-gradient-to-r from-brand to-apricot bg-clip-text not-italic text-transparent">one conversation</em>.</h1>
-            <p className="mt-4 max-w-lg text-ink-soft">Describe your need in plain words. The assistant checks <b>real availability</b>, books through controlled capabilities, verifies against the health system, and syncs — never inventing slots.</p>
+            <p className="mt-4 max-w-lg text-ink-soft">Describe your need in plain words. The assistant checks <b>real availability</b> and books through controlled capabilities — never inventing slots.</p>
             <div className="mt-6 flex flex-wrap gap-2">
               <Link to="/register" className="btn-primary">Start as patient</Link>
               <Link to="/hospitals/apply" className="btn-ghost">Register hospital</Link>
@@ -47,7 +47,7 @@ export default function Landing() {
             <div className="card absolute -bottom-6 -left-2 p-4 md:-left-6 animate-pop-in" style={{ animationDelay: '300ms' }}>
               <div className="text-[11px] font-bold tracking-wider text-mint-deep">● LIVE VERIFICATION</div>
               <div className="text-sm font-bold">Appointment #8 · confirmed</div>
-              <div className="font-mono text-[11px] text-ink-soft">EHR matched · synced · ref e1e3e806224d</div>
+              <div className="font-mono text-[11px] text-ink-soft">validated · confirmed · ref e1e3e806224d</div>
             </div>
           </div>
         </div>

@@ -50,7 +50,7 @@ export default function HospitalDetail() {
           {rev && rev.count ? <div><div className="text-3xl font-bold">★ {rev.avg}</div><div className="text-sm text-ink-soft">{rev.count} reviews</div><div className="mt-2 text-sm space-y-1">{[5, 4, 3, 2, 1].map(s => <div key={s} className="flex justify-between"><span>★ {s}</span><b>{rev.dist?.[s] || 0}</b></div>)}</div></div>
           : <div className="text-sm text-ink-soft">No patient reviews yet.</div>}
         </Card>
-        <Card><div className="font-bold mb-2">Systems</div><div className="text-sm text-ink-soft">EHR: {h.ehr_vendor} · Facility <code className="text-xs">{h.external_facility_id}</code></div></Card>
+        <Card><div className="font-bold mb-2">Visit info</div><div className="text-sm text-ink-soft">{h.completed_visits ?? 0} completed visits · {docs.length} doctors</div></Card>
       </div>
     </div>
     <div className="mt-6"><div className="mb-2 font-display text-xl font-semibold">Doctors at {h.name} <span className="text-sm font-sans text-ink-soft">({docs.length})</span></div>

@@ -12,7 +12,7 @@ router = APIRouter(tags=["hospitals"])
 
 class HospIn(BaseModel):
     name: str; address: str = ""; city: str = ""; phone: str = ""; contact_email: str = ""
-    operating_hours: dict = {}; services: list = []; ehr_vendor: str = "mock"; ehr_config: dict = {}
+    operating_hours: dict = {}; services: list = []
     as_draft: bool = False
 
 @router.post("/hospitals/apply")
@@ -27,7 +27,7 @@ def apply(b: HospIn, db: Session = Depends(get_db), u=Depends(get_current_user))
     from ...utils.photos import hospital_cover_for
     cover_url = hospital_cover_for(slug)
     status = "draft" if b.as_draft else "submitted"
-    h = models.Hospital(name=b.name, slug=slug, status=status, address=b.address, city=b.city, phone=b.phone, contact_email=b.contact_email, operating_hours=json.dumps(b.operating_hours), services=json.dumps(b.services), ehr_vendor=b.ehr_vendor, ehr_config=json.dumps(b.ehr_config), cover_url=cover_url, external_facility_id=f"ext-fac-{slug}")
+    h = models.Hospital(name=b.name, slug=slug, status=status, address=b.address, city=b.city, phone=b.phone, contact_email=b.contact_email, operating_hours=json.dumps(b.operating_hours), services=json.dumps(b.services), cover_url=cover_url)
     db.add(h); db.commit(); db.refresh(h)
     if u.role == "hospital_admin" and not u.hospital_id: u.hospital_id = h.id; db.commit()
     audit(db, f"hospital.{'draft' if status == 'draft' else 'apply'}", "hospital", h.id, h.id, u.id, {"name": b.name}, "")
@@ -42,7 +42,7 @@ def create_draft(b: HospIn, db: Session = Depends(get_db), u=Depends(get_current
     slug = "".join(c.lower() if c.isalnum() else "-" for c in b.name)[:60].strip("-")
     if db.query(models.Hospital).filter(models.Hospital.slug==slug).first(): slug += "-2"
     from ...utils.photos import hospital_cover_for
-    h = models.Hospital(name=b.name, slug=slug, status="draft", address=b.address, city=b.city, phone=b.phone, contact_email=b.contact_email, operating_hours=json.dumps(b.operating_hours), services=json.dumps(b.services), ehr_vendor=b.ehr_vendor, ehr_config=json.dumps(b.ehr_config), cover_url=hospital_cover_for(slug), external_facility_id=f"ext-fac-{slug}")
+    h = models.Hospital(name=b.name, slug=slug, status="draft", address=b.address, city=b.city, phone=b.phone, contact_email=b.contact_email, operating_hours=json.dumps(b.operating_hours), services=json.dumps(b.services), cover_url=hospital_cover_for(slug))
     db.add(h); db.commit(); db.refresh(h)
     audit(db, "hospital.draft", "hospital", h.id, h.id, u.id, {"name": b.name}, "")
     return {"id": h.id, "slug": slug, "status": h.status}
@@ -61,7 +61,7 @@ def list_h(db: Session = Depends(get_db), u=Depends(get_current_user), status: s
     for h in query.limit(100).all():
         dcnt = db.query(_func.count(models.Doctor.id)).filter(models.Doctor.hospital_id==h.id, models.Doctor.status=="active").scalar() or 0
         _rc, _ra = hospital_review_stats(db, h.id)
-        out.append({"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"city":h.city,"address":h.address,"latitude":h.latitude,"longitude":h.longitude,"phone":h.phone,"contact_email":h.contact_email,"services":h.services,"operating_hours":h.operating_hours,"ehr_vendor":h.ehr_vendor,"cover_url":h.cover_url,"doctor_count":dcnt,"avg_rating":_ra,"review_count":_rc,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes})
+        out.append({"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"city":h.city,"address":h.address,"latitude":h.latitude,"longitude":h.longitude,"phone":h.phone,"contact_email":h.contact_email,"services":h.services,"operating_hours":h.operating_hours,"cover_url":h.cover_url,"doctor_count":dcnt,"avg_rating":_ra,"review_count":_rc,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes})
     return out
 
 @router.get("/hospitals/{hid}")
@@ -78,11 +78,10 @@ def get_h(hid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
         sp = db.query(models.Specialty).filter(models.Specialty.id==d.specialty_id).first() if d.specialty_id else None
         doc_list.append({"id":d.id,"name":d.name,"specialty":sp.name if sp else "","experience_years":d.experience_years,"rating":d.rating,"photo_url":d.photo_url})
     admins = [{"id":x.id,"email":x.email,"full_name":x.full_name,"is_active":x.is_active} for x in db.query(models.User).filter(models.User.hospital_id==hid, models.User.role=="hospital_admin").all()]
-    conns = [{"id":c.id,"vendor":c.vendor,"base_url":c.base_url,"status":c.status} for c in db.query(models.HealthcareConnection).filter(models.HealthcareConnection.hospital_id==hid).all()]
     specs = [{"id":s.id,"name":s.name} for s in db.query(models.Specialty).filter((models.Specialty.hospital_id==hid)|(models.Specialty.hospital_id==None)).all()]
     from .reviews import hospital_review_stats
     _rc, _ra = hospital_review_stats(db, hid)
-    return {"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"address":h.address,"city":h.city,"latitude":h.latitude,"longitude":h.longitude,"phone":h.phone,"contact_email":h.contact_email,"operating_hours":h.operating_hours,"services":h.services,"ehr_vendor":h.ehr_vendor,"ehr_config":h.ehr_config,"cover_url":h.cover_url,"departments":depts,"specialties":specs,"doctor_count":len(docs),"doctors":doc_list,"admins":admins,"connections":conns,"avg_rating":_ra,"review_count":_rc,"completed_visits":db.query(_func.count(models.Appointment.id)).filter(models.Appointment.hospital_id==hid, models.Appointment.status=="completed").scalar() or 0,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes,"external_facility_id":h.external_facility_id}
+    return {"id":h.id,"name":h.name,"slug":h.slug,"status":h.status,"address":h.address,"city":h.city,"latitude":h.latitude,"longitude":h.longitude,"phone":h.phone,"contact_email":h.contact_email,"operating_hours":h.operating_hours,"services":h.services,"cover_url":h.cover_url,"departments":depts,"specialties":specs,"doctor_count":len(docs),"doctors":doc_list,"admins":admins,"avg_rating":_ra,"review_count":_rc,"completed_visits":db.query(_func.count(models.Appointment.id)).filter(models.Appointment.hospital_id==hid, models.Appointment.status=="completed").scalar() or 0,"created_at":h.created_at.isoformat() if h.created_at else None,"review_notes":h.review_notes}
 
 @router.post("/hospitals/{hid}/submit")
 def resubmit(hid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
@@ -112,7 +111,7 @@ def patch_h(hid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_c
     if not h: raise HTTPException(404)
     if u.role=="hospital_admin" and u.hospital_id!=hid: raise HTTPException(403, "Cross-tenant denied")
     if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
-    for k in ("name","address","city","phone","contact_email","operating_hours","services","ehr_vendor","ehr_config"):
+    for k in ("name","address","city","phone","contact_email","operating_hours","services"):
         if k in body: setattr(h, k, json.dumps(body[k]) if isinstance(body[k],(dict,list)) else body[k])
     for k in ("latitude", "longitude"):
         if k in body:
@@ -139,7 +138,6 @@ def review(hid: int, body: dict, db: Session = Depends(get_db), u=Depends(get_cu
     h.status = mapping[action]; h.review_notes = note; db.commit()
     if h.status=="approved":
         ensure_defaults(db, h.id)
-        db.add(models.HealthcareConnection(hospital_id=h.id, vendor=h.ehr_vendor or "mock", base_url="http://mock-ehr:8001", status="active", config_json="{}")); db.commit()
         from ...services.workflows import fire_event
         fire_event(db, "hospital.approved", h.id, {"hospital_id": h.id}, "")
         admins = db.query(models.User).filter(models.User.hospital_id==h.id).all()

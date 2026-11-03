@@ -50,17 +50,16 @@ def test_prompts_carry_spelling_guidance():
 
     assert "repaired_specialty" in ROUTER_SYSTEM
     assert "repaired_query" in ROUTER_SYSTEM
-    assert "Did you mean" in RESPONSE_SYSTEM
-    # Empty results from a possible misspelling must not jump to escalation.
-    assert "never log a tracked request for what may be a spelling mistake" in RESPONSE_SYSTEM
+    assert "repaired_specialty" in RESPONSE_SYSTEM or "repaired_query" in RESPONSE_SYSTEM
 
 
-def test_dates_normalize_still_deterministic():
+def test_dates_global_no_wordlists():
     from datetime import datetime, timezone
     from app.ai_assistant.utils import dates as dates_mod
     import inspect
 
-    # No typo-table imports: repair stays in the LLM layer.
-    assert "typo" not in inspect.getsource(dates_mod.normalize)
-    out = dates_mod.normalize("Friday morning", now=datetime(2026, 9, 20, tzinfo=timezone.utc))
+    src = inspect.getsource(dates_mod.normalize) + inspect.getsource(dates_mod.normalize_global)
+    assert "monday" not in src.lower() and "january" not in src.lower()
+    assert dates_mod.normalize("2026-09-25", now=datetime(2026, 9, 20, tzinfo=timezone.utc))["date_iso"] == "2026-09-25"
+    out = dates_mod.normalize_global({"date_iso": "2026-09-25", "time_window": "morning"}, {})
     assert out["date_iso"] == "2026-09-25" and out["day_part"] == "morning"

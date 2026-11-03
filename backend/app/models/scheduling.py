@@ -65,8 +65,6 @@ class Appointment(Base):
     reason: Mapped[str] = mapped_column(Text, default="")
     idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     correlation_id: Mapped[str] = mapped_column(String(64), index=True, default="")
-    external_appointment_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    integration_status: Mapped[str] = mapped_column(String(40), default="pending", index=True)  # pending|synced|verification_pending|failed|reconciliation_required|unknown_outcome
     conversation_id: Mapped[int | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

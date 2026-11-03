@@ -37,7 +37,6 @@ class AIContext(Base):
     transactional: Mapped[str] = mapped_column(Text, default="{}")
     user_ctx: Mapped[str] = mapped_column(Text, default="{}")
     workflow_state: Mapped[str] = mapped_column(Text, default="{}")
-    integration_state: Mapped[str] = mapped_column(Text, default="{}")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
