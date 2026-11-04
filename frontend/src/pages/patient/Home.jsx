@@ -41,7 +41,7 @@ export function DoctorSpotlight() {
 
 export default function Home() {
   const [d, setD] = useState(null); const [appts, setAppts] = useState([])
-  useEffect(() => { api('/dashboard/patient').then(setD).catch(() => {}); api('/appointments?upcoming=true').then(r => setAppts(r.slice(0, 3))).catch(() => {}) }, [])
+  useEffect(() => { api('/dashboard/patient').then(setD).catch(() => {}); api('/appointments?upcoming=true').then(r => setAppts([...(r || [])].sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at)).slice(0, 3))).catch(() => {}) }, [])
   return (
     <div>
       <div className="hero-gradient mb-5 rounded-2xl p-6 text-white shadow-lift md:p-7 [&_h1]:text-white [&_p]:text-white/80 [&_div]:!mb-0">

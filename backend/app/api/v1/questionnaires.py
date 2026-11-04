@@ -65,6 +65,23 @@ def get_q(qid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
     if not x: raise HTTPException(404)
     return {"id":x.id,"title":x.title,"description":x.description,"schema":json.loads(x.schema_json or "[]")}
 
+@router.get("/questionnaire-responses/{rid}")
+def get_r(rid: int, db: Session = Depends(get_db), u=Depends(get_current_user)):
+    from ...core.deps import tenant_hospital_id
+    r = db.query(models.QuestionnaireResponse).filter(models.QuestionnaireResponse.id == rid).first()
+    if not r: raise HTTPException(404)
+    if u.role == "patient" and r.patient_id != u.patient_id: raise HTTPException(403)
+    if u.role == "doctor":
+        ap = db.query(models.Appointment).filter(models.Appointment.id == r.appointment_id).first()
+        if not ap or (u.doctor_id and ap.doctor_id != u.doctor_id): raise HTTPException(403)
+    if u.role == "hospital_admin" and u.hospital_id:
+        qq = db.query(models.Questionnaire).filter(models.Questionnaire.id == r.questionnaire_id).first()
+        if not qq or qq.hospital_id != u.hospital_id: raise HTTPException(403)
+        tenant_hospital_id(u, u.hospital_id)
+    qq = db.query(models.Questionnaire).filter(models.Questionnaire.id == r.questionnaire_id).first()
+    return {"id": r.id, "questionnaire_id": r.questionnaire_id, "questionnaire_title": qq.title if qq else "", "appointment_id": r.appointment_id, "patient_id": r.patient_id, "status": r.status, "answers": json.loads(r.answers_json or "{}"), "collected_via": r.collected_via}
+
+
 @router.get("/questionnaire-responses")
 def list_r(patient_id: int | None = None, appointment_id: int | None = None, questionnaire_id: int | None = None, status: str = "", db: Session = Depends(get_db), u=Depends(get_current_user)):
     q = db.query(models.QuestionnaireResponse)

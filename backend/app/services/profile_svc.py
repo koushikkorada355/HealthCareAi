@@ -93,7 +93,7 @@ def update_prefs(db, a, user=None):
     try:
         cur = _j.loads(pref.prefs or "{}")
     except Exception:
-        cur = {}
+        raise ValueError("Stored preferences are corrupt; reset required before update")
     cur.update(a.get("prefs", {}))
     pref.prefs = _j.dumps(cur)
     db.commit()

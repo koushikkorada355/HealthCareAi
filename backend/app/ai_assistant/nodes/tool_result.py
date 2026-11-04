@@ -113,9 +113,15 @@ async def run(state: dict) -> dict:
     out = first_out or {"ok": False, "code": "failed"}
     hops = int(state.get("hop_count", 0)) + 1
     status = "ok" if out.get("ok") else out.get("code", "failed")
+    try:
+        from app.ai_assistant.mcp import outcomes as _oc
+        outcome = _oc.derive_outcome(out, out.get("data", {}))
+    except Exception:
+        outcome = "failed" if not out.get("ok") else "unverified"
     trace = [*state.get("trace", []),
-             f"result:{tool}/{status}" + (f"x{len(results)}" if len(results) > 1 else "")]
+             f"result:{tool}/{status}/{outcome}" + (f"x{len(results)}" if len(results) > 1 else "")]
     update: dict = {"tool_result": out, "tool_status": status,
+                    "tool_outcome": outcome,
                     "tool_call_id": out.get("tool_call_id", ""),
                     "hop_count": hops, "trace": trace,
                     "last_tool": tool, "last_args": args,
@@ -131,7 +137,9 @@ async def run(state: dict) -> dict:
     if remaining:
         update["plan_steps"] = remaining
     plan_active = bool(remaining)
-    if out.get("ok") and hops < max_hops and not plan_active \
+    # Chain only on verified success with actionable lists; unverified,
+    # empty, partial, or failed results go to response for accurate messaging.
+    if out.get("ok") and update.get("tool_outcome") in ("success",) and hops < max_hops and not plan_active \
             and orch.has_actionable_data(out.get("data", {})):
         update["chain_hint"] = f"after {tool}: continue with next global step if needed"
         update["selected_tool"] = ""

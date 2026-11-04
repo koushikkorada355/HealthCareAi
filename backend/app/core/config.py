@@ -16,11 +16,16 @@ class Settings(BaseSettings):
     GROK_BASE_URL: str = "https://api.x.ai/v1"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
-    # Primary LLM: Inception Labs Mercury (user provides key in .env)
+    # Primary LLM: Muse Spark 1.3 via Meta Model API (key via .env, never hardcoded)
+    # Docs: https://dev.meta.ai/docs/ — OpenAI-compatible, Bearer MODEL_API_KEY
+    MUSE_SPARK_API_KEY: str = ""
+    MUSE_SPARK_BASE_URL: str = "https://api.meta.ai/v1"
+    MUSE_SPARK_MODEL: str = "muse-spark-1.3-contributor"
+    # Fallback 1 LLM: Inception Labs Mercury (user provides key in .env)
     INCEPTION_API_KEY: str = ""
     INCEPTION_BASE_URL: str = "https://api.inceptionlabs.ai/v1"
     INCEPTION_MODEL: str = "mercury-2.5"
-    # Fallback LLM: gpt-oss-120b via Groq
+    # Fallback 2 LLM: gpt-oss-120b via Groq
     GROQ_API_KEY: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
     GROQ_MODEL: str = "openai/gpt-oss-120b"
@@ -38,9 +43,9 @@ class Settings(BaseSettings):
     AI_DAY_MORNING: str = "5-12"
     AI_DAY_AFTERNOON: str = "12-17"
     AI_DAY_EVENING: str = "17-22"
-    # Voice (Phase 1): Mercury stays primary brain. STT via Groq-hosted
-    # whisper-large-v3-turbo (open weights, no local). TTS v1 = browser
-    # speechSynthesis (no model/key). No telephone.
+    # Voice (Phase 1): Muse Spark stays primary brain (Mercury, then gpt-oss
+    # fallbacks). STT via Groq-hosted whisper-large-v3-turbo (open weights,
+    # no local). TTS v1 = browser speechSynthesis (no model/key). No telephone.
     STT_PROVIDER: str = "groq-whisper"
     STT_MODEL: str = "whisper-large-v3-turbo"
     STT_LANGUAGE: str = "en"

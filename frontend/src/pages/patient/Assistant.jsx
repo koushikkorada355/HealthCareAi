@@ -98,7 +98,7 @@ function DynamicCard({ ui, onTap, busy }) {
       <div className="grid md:grid-cols-2 gap-3">
         {(ui.items || []).map((it, i) => {
           const rows = Object.entries(it || {}).filter(
-            ([k, v]) => k !== 'actions' && !k.startsWith('_') && v != null && v !== '' && typeof v !== 'object')
+            ([k, v]) => k !== 'actions' && !k.startsWith('_') && v != null && v !== '' && typeof v !== 'object' && !String(k).toLowerCase().endsWith('_id') && !['correlation_id', 'tool_call_id', 'tool_name', 'conversation_id', 'user_id', 'idempotency_key'].includes(String(k).toLowerCase()))
           return (
             <Card key={i} className="card-hover">
               <div className="space-y-1 text-sm">
@@ -212,8 +212,9 @@ export default function Assistant() {
   const loadMsgs = (id) => {
     if (!id) { setMsgs([]); return }
     // Tool rows are internal trace — cards carry their data, so hide them.
+    // Request the server maximum so reloads show actual backend state.
     const seq = ++loadSeq.current
-    api(`/ai/conversations/${id}/messages`).then(rs => {
+    api(`/ai/conversations/${id}/messages?limit=100`).then(rs => {
       if (seq !== loadSeq.current) return // stale fetch — never clobber newer rows
       const server = (rs || []).filter(m => m.role !== 'tool')
       setMsgs(prev => {

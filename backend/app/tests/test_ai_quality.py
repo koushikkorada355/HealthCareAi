@@ -65,7 +65,7 @@ def test_new_tool_registered():
     from app.ai_assistant.mcp import adapter
 
     assert "list_my_questionnaires" in adapter.known_tools()
-    assert len(adapter.known_tools()) == 34
+    assert len(adapter.known_tools()) == 32
     for t in ("find_next_available", "get_hospital_info", "list_specialties",
               "list_departments", "list_appointment_types",
               "get_appointment_details", "submit_review", "get_my_profile",

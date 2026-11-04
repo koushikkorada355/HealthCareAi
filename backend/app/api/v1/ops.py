@@ -44,7 +44,7 @@ def dash_hospital(hospital_id: int | None = None, db: Session = Depends(get_db),
         "confirmed": f(db.query(func.count(models.Appointment.id)).filter(models.Appointment.status=="confirmed")).scalar(),
         "cancelled": f(db.query(func.count(models.Appointment.id)).filter(models.Appointment.status=="cancelled")).scalar(),
         "doctors": db.query(func.count(models.Doctor.id)).filter(models.Doctor.hospital_id==hid).scalar(),
-        "questionnaires_pending": db.query(func.count(models.QuestionnaireResponse.id)).filter(models.QuestionnaireResponse.status!="completed").scalar(),
+        "questionnaires_pending": db.query(func.count(models.QuestionnaireResponse.id)).join(models.Questionnaire, models.Questionnaire.id==models.QuestionnaireResponse.questionnaire_id).filter(models.Questionnaire.hospital_id==hid, models.QuestionnaireResponse.status!="completed").scalar(),
         "notifications": db.query(func.count(models.Notification.id)).filter(models.Notification.hospital_id==hid).scalar(),
     }
 
@@ -62,7 +62,7 @@ def dash_doctor(db: Session = Depends(get_db), u=Depends(get_current_user)):
 def dash_patient(db: Session = Depends(get_db), u=Depends(get_current_user)):
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
-    up = db.query(models.Appointment).filter(models.Appointment.patient_id==u.patient_id, models.Appointment.starts_at>=now).order_by(models.Appointment.starts_at).first()
+    up = db.query(models.Appointment).filter(models.Appointment.patient_id==u.patient_id, models.Appointment.starts_at>=now, ~models.Appointment.status.in_(("cancelled","completed","no_show","failed"))).order_by(models.Appointment.starts_at).first()
     d = db.query(models.Doctor).filter(models.Doctor.id==up.doctor_id).first() if up else None
     return {"upcoming": {"id":up.id,"starts_at":up.starts_at.isoformat(),"status":up.status,"doctor":d.name if d else ""} if up else None,
             "total": db.query(func.count(models.Appointment.id)).filter(models.Appointment.patient_id==u.patient_id).scalar(),
@@ -119,8 +119,10 @@ def activity(db: Session = Depends(get_db), u=Depends(get_current_user)):
 @router.get("/analytics/overview")
 def analytics(db: Session = Depends(get_db), u=Depends(get_current_user)):
     if u.role not in ("platform_admin","hospital_admin"): raise HTTPException(403)
-    by_status = db.query(models.Appointment.status, func.count(models.Appointment.id)).group_by(models.Appointment.status).all()
-    return {"appointments_by_status": {k:v for k,v in by_status}}
+    q = db.query(models.Appointment.status, func.count(models.Appointment.id)).group_by(models.Appointment.status)
+    if u.role == "hospital_admin" and u.hospital_id:
+        q = q.filter(models.Appointment.hospital_id == u.hospital_id)
+    return {"appointments_by_status": {k:v for k,v in q.all()}}
 
 @router.get("/patients")
 def patients(db: Session = Depends(get_db), u=Depends(get_current_user), q: str = ""):

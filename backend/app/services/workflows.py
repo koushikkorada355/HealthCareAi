@@ -18,8 +18,15 @@ def ensure_defaults(db: Session, hospital_id=None):
     db.commit()
 
 def fire_event(db: Session, event: str, hospital_id, payload: dict, corr=""):
+    """Fire matching workflows synchronously.
+
+    Returns {"matched": n, "failed": m}. Callers that require a workflow
+    (e.g. the start_workflow tool) must check matched/failed; booking and
+    appointment flows ignore the return to preserve their contracts.
+    """
     flows = db.query(models.Workflow).filter(models.Workflow.trigger_event==event, models.Workflow.is_active==True).all()
     flows = [w for w in flows if (w.hospital_id == hospital_id or w.hospital_id is None)]
+    _failed = 0
     for w in flows:
         ex = models.WorkflowExecution(workflow_id=w.id, trigger_ref=json.dumps(payload)[:500], status="running", input_json=json.dumps(payload), correlation_id=corr)
         db.add(ex); db.commit()
@@ -46,3 +53,5 @@ def fire_event(db: Session, event: str, hospital_id, payload: dict, corr=""):
         except Exception as e:
             ex.status = "failed"; ex.error = str(e)[:2000]; db.commit()
             ops(db, "workflow.failed", f"Workflow {w.name} failed: {e}", "error", hospital_id, corr, {})
+            _failed += 1
+    return {"matched": len(flows), "failed": _failed}

@@ -76,8 +76,10 @@ async def reschedule(db, a, user=None, corr=""):
         transition(db, ap, "rescheduled", actor=f"user:{uid(user)}",
                    note=f"{old} -> {ns.isoformat()}", corr=corr)
     except Exception:
-        db.commit()
+        db.rollback()
+        raise
     fire_event(db, "appointment.rescheduled", ap.hospital_id, {"appointment_id": ap.id}, corr)
+    db.refresh(ap)
     return {"id": ap.id, "status": ap.status, "starts_at": ap.starts_at.isoformat()}
 
 
@@ -90,4 +92,5 @@ async def cancel(db, a, user=None, corr=""):
     transition(db, ap, "cancelled", actor=f"user:{uid(user)}",
                note=a.get("reason", "cancelled"), corr=corr)
     fire_event(db, "appointment.cancelled", ap.hospital_id, {"appointment_id": ap.id}, corr)
-    return {"id": ap.id, "status": "cancelled"}
+    db.refresh(ap)
+    return {"id": ap.id, "status": ap.status}

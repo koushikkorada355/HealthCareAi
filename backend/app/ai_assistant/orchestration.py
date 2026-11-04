@@ -114,6 +114,12 @@ def _lookup_ref(ref: str, state: dict):
         return ref, False
     scope, field = m.group(1), m.group(2)
     if scope == "prev":
+        # Never reuse explicitly failed results: $prev resolves only when
+        # the current tool result is not a recorded failure. Legacy states
+        # without an ok flag still resolve (backward compatible).
+        _tres = state.get("tool_result") or {}
+        if "ok" in _tres and not _tres.get("ok"):
+            return ref, False
         data = (state.get("tool_result") or {}).get("data", {})
         if isinstance(data, dict) and field in data:
             return data[field], True
@@ -366,20 +372,64 @@ def has_actionable_data(data: dict) -> bool:
     return any(isinstance(v, list) and len(v) > 0 for v in data.values())
 
 
+_PROVEN_STATUSES = frozenset({
+    "confirmed", "rescheduled", "cancelled", "completed", "no_show",
+    "approved", "sent", "assigned", "resolved", "active",
+})
+
+
 def is_proven_result(tool: str, data: dict) -> bool:
-    """Generic proof check, no tool names: an explicit verified flag, an
-    appointment reference, or an id paired with a lifecycle marker (search
-    listings carry bare ids with no status, so they never count)."""
+    """Strict generic proof check, no tool names.
+
+    Proof requires an explicit verified flag or an id paired with a
+    success lifecycle status. A bare appointment_id/id, a failed status,
+    or verified==False never counts (search listings carry bare ids with
+    no status, so they never count).
+    """
     if not isinstance(data, dict):
         return False
     if data.get("verified") is True:
         return True
+    if data.get("verified") is False:
+        return False
+    status = str(data.get("status", "")).lower()
     if data.get("appointment_id"):
-        return True
-    return bool(data.get("id") and (data.get("status") or data.get("verified") is not None))
+        return status in _PROVEN_STATUSES
+    if data.get("id") and status:
+        return status in _PROVEN_STATUSES
+    return False
 
 
 # ----------------------------------------------------------- UI cards
+
+_INTERNAL_ITEM_KEYS = frozenset({
+    "correlation_id", "tool_call_id", "tool_name", "conversation_id",
+    "user_id", "idempotency_key", "powered_by", "trace", "channel",
+})
+
+
+def sanitize_card_item(item: dict) -> dict:
+    """Drop internal identifiers from a card/UI item (display layer).
+
+    Generic across all tools: removes *_id fields except the user-facing
+    appointment reference (appointment_id/id), plus correlation/execution
+    metadata. Actions are preserved untouched.
+    """
+    if not isinstance(item, dict):
+        return item
+    out = {}
+    for k, v in item.items():
+        if k == "actions":
+            out[k] = v
+            continue
+        lk = str(k).lower()
+        if lk in _INTERNAL_ITEM_KEYS:
+            continue
+        if lk.endswith("_id") and lk not in ("appointment_id", "id"):
+            continue
+        out[k] = v
+    return out
+
 
 def build_card(tool: str, data: dict, page: int | None = None) -> dict:
     """Deterministic fallback card builder for ANY tool: finds the first list
@@ -408,7 +458,7 @@ def build_card(tool: str, data: dict, page: int | None = None) -> dict:
                         *acts][:3]
             else:
                 acts = acts[:3]
-            out.append({**it, "actions": acts})
+            out.append({**sanitize_card_item(it), "actions": acts})
         card = {"card": key, "items": out}
         for extra in ("doctor_id", "avg", "count"):
             if data.get(extra) is not None:
@@ -418,7 +468,7 @@ def build_card(tool: str, data: dict, page: int | None = None) -> dict:
     if data.get("appointment_id") or (data.get("id") and data.get("status")):
         aid = data.get("appointment_id") or data.get("id")
         acts = actions_for_item({"appointment_id": aid}, exclude_tool=tool)
-        return {"card": "appointment", "items": [{**data, "actions": acts[:3]}]}
+        return {"card": "appointment", "items": [{**sanitize_card_item(data), "actions": acts[:3]}]}
     if data.get("id") and (data.get("title") or data.get("schema")):
         acts = actions_for_item({"questionnaire_id": data.get("id")}, exclude_tool=tool)
         return {"card": "questionnaire", "items": [{**data, "actions": acts[:3]}]}
@@ -539,7 +589,7 @@ def validate_ui(ui: dict, verified: dict) -> dict:
             if not dates <= known_dates:
                 continue
             clean_actions.append({"label": label, "text": text})
-        entry = {k: v for k, v in it.items() if k != "actions"}
+        entry = {k: v for k, v in sanitize_card_item(it).items() if k != "actions"}
         entry["actions"] = clean_actions[:3]
         clean_items.append(entry)
     if not clean_items:

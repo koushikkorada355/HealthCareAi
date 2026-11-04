@@ -137,7 +137,7 @@ export function Questionnaires() {
 export function QFill() {
   const { id } = useParams()
   const [schema, setSchema] = useState([]); const [title, setTitle] = useState(''); const [ans, setAns] = useState({}); const [msg, setMsg] = useState(''); const [step, setStep] = useState(0); const [mode, setMode] = useState('chat'); const [loadErr, setLoadErr] = useState('')
-  useEffect(() => { api('/questionnaire-responses').then(rs => { const r = rs.find(x => x.id === Number(id)); if (!r) { setLoadErr('Questionnaire not found — it may have been removed.'); return }; api(`/questionnaires/${r.questionnaire_id}`).then(q => { setSchema(q.schema); setTitle(q.title); setAns(r.answers || {}) }).catch(() => setLoadErr('Could not load this questionnaire — please retry.')) }).catch(() => setLoadErr('Could not load questionnaires — please check your connection and retry.')) }, [id])
+  useEffect(() => { api(`/questionnaire-responses/${id}`).then(r => { api(`/questionnaires/${r.questionnaire_id}`).then(q => { setSchema(q.schema); setTitle(q.title); setAns(r.answers || {}) }).catch(() => setLoadErr('Could not load this questionnaire — please retry.')) }).catch(() => setLoadErr('Questionnaire not found — it may have been removed.')) }, [id])
   const submit = async () => { try { await api(`/questionnaire-responses/${id}/submit`, { method: 'POST', body: { answers: ans, via: mode === 'chat' ? 'ai_chat' : 'web' } }); setMsg('Submitted — the doctor can now review your responses.') } catch (e) { setMsg(e.message) } }
   const cur = schema[step]
   return <div><PageHead title={title || 'Questionnaire'} right={<button className="btn-ghost text-sm" onClick={() => setMode(mode === 'chat' ? 'form' : 'chat')}>{mode === 'chat' ? 'Switch to form' : 'Switch to chat'}</button>} />

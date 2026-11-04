@@ -60,7 +60,7 @@ export default function BookConfirm() {
           hospital_id: doc.hospital_id, doctor_id: doc.id, patient_id: u.patient_id,
           starts_at: s.starts_at, ends_at: s.ends_at, calendar_id: s.calendar_id,
           mode, reason: fullReason,
-          idempotency_key: `book2page-${u.id}-${doc.id}-${s.starts_at}-${Date.now().toString(36)}`,
+          idempotency_key: `book2page-${u.id}-${doc.id}-${s.starts_at}`,
         },
       })
       setProg(CHAIN.length - 1); setDone(r)

@@ -38,6 +38,20 @@ async def run_turn(db, *, user, conversation_id: int | None, text: str,
         out = await graph.ainvoke(state, config={"configurable": {"thread_id": f"conv-{conv.id if conv else 'new'}"}})
     except AINotAvailable:
         raise
+    # Post-guard (generic): never return a success claim when the tool did
+    # not succeed, even if the response node hallucinated one.
+    try:
+        from app.ai_assistant.nodes.response import _claims_success, sanitize_reply
+        _tres = out.get("tool_result") or {}
+        _tok = bool(_tres.get("ok"))
+        _rep = str(out.get("reply", ""))
+        if _claims_success(_rep) and not _tok:
+            _rep = sanitize_reply(_rep, tool_ok=False, data={})
+            if _claims_success(_rep):
+                _rep = "I couldn't complete that. Could you share a bit more detail so I can help?"
+            out["reply"] = _rep
+    except Exception:
+        pass
     return {"reply": out.get("reply", ""), "conversation_id": out.get("conversation_id"),
             "correlation_id": corr, "trace": out.get("trace", []),
             "data": out.get("data", {}), "powered_by": out.get("powered_by", "")}

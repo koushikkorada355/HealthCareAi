@@ -30,6 +30,139 @@ def _has_list_payload(data: dict) -> bool:
                for v in data.values())
 
 
+def _known_tool_names() -> list[str]:
+    """Dynamic tool-name list for output sanitizing (no hardcoded names)."""
+    try:
+        from app.ai_assistant.mcp import registry as _reg
+        return [str(t) for t in _reg.tool_names()]
+    except Exception:
+        return []
+
+
+def sanitize_reply(reply: str, *, tool_ok: bool = False, data: dict | None = None) -> str:
+    """User-facing output normalization: strip tool internals globally.
+
+    Removes fenced code blocks, JSON payloads, tool names, and internal
+    identifiers (e.g. doctor_id, patient_id, calendar_id) so the user only
+    sees natural conversational language. Generic across all tools.
+    """
+    import re as _re
+
+    text = str(reply or "")
+    # Strip fenced code blocks (```...```) — common JSON leak vector.
+    text = _re.sub(r"```.*?```", " ", text, flags=_re.S)
+
+    def _strip_balanced_json(s: str) -> str:
+        """Remove balanced {...} blocks (handles nested tool payloads)."""
+        chars = list(s)
+        out: list[str] = []
+        depth = 0
+        in_str = False
+        esc = False
+        has_content = False
+        for ch in chars:
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                if depth > 0:
+                    continue
+                out.append(ch)
+                continue
+            if ch == '"':
+                in_str = True
+                if depth > 0:
+                    continue
+                out.append(ch)
+                continue
+            if ch == "{":
+                depth += 1
+                has_content = has_content or depth > 0
+                continue
+            if ch == "}":
+                if depth > 0:
+                    depth -= 1
+                    continue
+                out.append(ch)
+                continue
+            if depth > 0:
+                continue
+            out.append(ch)
+        return "".join(out) if has_content else s
+
+    # Remove JSON payloads first (balanced, supports nesting), then any
+    # leftover brace fragments.
+    if "{" in text and "}" in text:
+        text = _strip_balanced_json(text)
+    text = text.replace("{", " ").replace("}", " ")
+    # Humanize technical validation phrasing before stripping identifiers.
+    text = _re.sub(r"Missing required arguments\s*:?", "I need a bit more information:", text, flags=_re.I)
+    # Strip tool names dynamically (never display internal calls).
+    for _name in _known_tool_names():
+        text = _re.sub(r"\b" + _re.escape(_name) + r"\b", " ", text)
+    # Strip internal identifiers like doctor_id: 5, patient_id=1, calendar_id "3".
+    text = _re.sub(r"\b[a-zA-Z_]*_id\b\s*[:=]\s*\"?[\w\-]+\"?", " ", text)
+    # Humanize any remaining bare internal identifiers (e.g. "hospital_id" ->
+    # "hospital") so no database field name ever reaches the user.
+    text = _re.sub(r"\b([a-zA-Z]+)_id\b", r"\1", text)
+    # Strip explicit ID dumps like "(id: 5)" leftovers handled above; collapse space.
+    text = _re.sub(r"[ \t]+", " ", text)
+    text = _re.sub(r"\n{3,}", "\n\n", text).strip()
+    # If nothing usable remains (or still looks like raw JSON), fall back to
+    # a natural sentence grounded only in a verified record — never fabricate
+    # a booking from a slot listing (slot starts_at is not proof of booking).
+    if not text or (text.startswith("{") and text.endswith("}")):
+        if tool_ok:
+            try:
+                from app.ai_assistant import orchestration as _orch
+                if _orch.is_proven_result("", data or {}):
+                    aid = (data or {}).get("appointment_id") or (data or {}).get("id")
+                    if aid:
+                        return f"Done — reference #{aid}."
+                    return "Done — I've completed that for you."
+            except Exception:
+                pass
+            return "Done — I've completed that for you." if tool_ok else "I couldn't complete that. Could you share a bit more detail so I can help?"
+        return "I couldn't complete that. Could you share a bit more detail so I can help?"
+    return text
+
+
+def _sanitize_item(item: dict) -> dict:
+    """Drop internal identifiers from a card/UI item before display."""
+    if not isinstance(item, dict):
+        return item
+    keep_exception = {"appointment_id", "id"}
+    out = {}
+    for k, v in item.items():
+        if k in ("actions",):
+            out[k] = v
+            continue
+        lk = str(k).lower()
+        if lk in ("correlation_id", "tool_call_id", "tool_name", "conversation_id",
+                  "user_id", "idempotency_key", "powered_by", "trace", "channel"):
+            continue
+        if lk.endswith("_id") and lk not in keep_exception:
+            continue
+        out[k] = v
+    return out
+
+
+def sanitize_payload(payload: dict) -> dict:
+    """Strip internal fields from card/ui payload items (display layer)."""
+    if not isinstance(payload, dict):
+        return payload
+    out = dict(payload)
+    for key in ("items",):
+        items = out.get(key)
+        if isinstance(items, list):
+            out[key] = [_sanitize_item(it) if isinstance(it, dict) else it for it in items]
+    # Legacy appointment singletons ride inside items already handled above.
+    return out
+
+
 def _card(tool: str, data: dict, doctor_name: str = "") -> dict:
     """Generic card builder: delegates to orchestration.build_card() which
     renders ANY tool's list payload with registry-derived follow-up actions.
@@ -143,41 +276,58 @@ async def _llm_options(state: dict, card: dict) -> list[dict]:
 
 # ---- Back-compat shims for tests / callers (LLM-first semantics) ----
 
+def _claims_success(reply: str) -> bool:
+    """Generic success-claim detector (no tool names).
+
+    Catches booked/confirmed/cancelled/rescheduled/completed/deleted/
+    updated/sent/created claims in the user-facing reply.
+    """
+    import re as _re
+    return bool(_re.search(
+        r"\b(booked|booking confirmed|confirmed|cancelled|rescheduled|completed|"
+        r"deleted|updated|sent|created|done\b.*completed|successfully booked)\b",
+        str(reply or ""), flags=_re.I))
+
+
 def violations(reply: str, tool_ok: bool, booking_proven: bool = False,
                dup_hits: int = 0, speculative: bool = False,
                data: dict | None = None) -> list[str]:
-    """Structural guard only: flag unproven record claims.
+    """Structural guard: flag success claims without backend proof.
 
-    Language-agnostic and data-aware: a concrete reference (#<digits>) is
-    fine when that id exists anywhere in the verified tool output (e.g. an
-    escalation reference number); it is flagged only when the cited number
-    matches nothing the tools returned — no word lists in any language.
-    The async path (_needs_rewrite) adds LLM wording review on top.
+    Flags when the reply claims an operation succeeded but the tool did
+    not report success (tool_ok False) or the result is not proven.
+    A concrete reference (#<digits>) is fine only when that id exists in
+    verified tool output; otherwise flagged. No per-tool branches.
     """
     import re as _re
-    if booking_proven:
+    if not tool_ok and _claims_success(reply):
+        return ["false-success"]
+    if booking_proven and tool_ok:
         return []
     refs = set(_re.findall(r"#\s*(\d+)", reply or ""))
-    if not refs:
-        return []
-    known: set[str] = set()
+    if refs:
+        known: set[str] = set()
 
-    def _collect(v):
-        if isinstance(v, dict):
-            for x in v.values():
-                _collect(x)
-        elif isinstance(v, list):
-            for x in v:
-                _collect(x)
-        elif isinstance(v, int):
-            known.add(str(v))
-        elif isinstance(v, str) and v.isdigit():
-            known.add(v.lstrip("0") or "0")
+        def _collect(v):
+            if isinstance(v, dict):
+                for x in v.values():
+                    _collect(x)
+            elif isinstance(v, list):
+                for x in v:
+                    _collect(x)
+            elif isinstance(v, int):
+                known.add(str(v))
+            elif isinstance(v, str) and v.isdigit():
+                known.add(v.lstrip("0") or "0")
 
-    _collect(data or {})
-    if refs <= {n.lstrip("0") or "0" for n in known} | known:
-        return []
-    return ["false-booking"]
+        _collect(data or {})
+        if not (refs <= {n.lstrip("0") or "0" for n in known} | known):
+            return ["false-booking"]
+    # Success wording with neither proof nor reference is still a violation
+    # when the tool did not succeed.
+    if not tool_ok and not booking_proven and _claims_success(reply):
+        return ["false-success"]
+    return []
 
 
 def _dup_count(reply: str, card: dict) -> int:
@@ -241,11 +391,20 @@ def _options(state: dict) -> list[dict]:
 
 async def _needs_rewrite(reply: str, tool_ok: bool, booking_proven: bool,
                          has_data: bool) -> bool:
-    """LLM self-check: does the reply claim background work, live-agent
-    promises, or unproven bookings? Pure LLM, no word lists."""
+    """Rewrite gate: deterministic failure rule first, LLM audit second.
+
+    If the tool did not succeed but the reply claims success, always
+    rewrite (no LLM judgment needed). Otherwise fall back to the LLM
+    wording audit; auditor failure fails closed to the structural shim.
+    """
+    # Deterministic: failed tool + success claim must never reach the user.
+    if not tool_ok and _claims_success(reply):
+        return True
+    if not booking_proven and _claims_success(reply) and not has_data:
+        return True
     from app.ai_assistant.services import llm as llm_mod
 
-    if booking_proven:
+    if booking_proven and tool_ok:
         return False
     try:
         res = await llm_mod.generate(
@@ -264,8 +423,10 @@ async def _needs_rewrite(reply: str, tool_ok: bool, booking_proven: bool,
             data = json.loads(res.content[s:e + 1]) if s >= 0 and e > s else {}
         return bool(data.get("rewrite", False))
     except Exception:
-        # Fail-open to old structural shim (never block on auditor failure).
-        return bool(violations(reply, tool_ok, booking_proven))
+        # Fail closed to the structural shim (never let auditor failure
+        # pass a hallucination through).
+        return True if _claims_success(reply) and not booking_proven else bool(
+            violations(reply, tool_ok, booking_proven))
 
 
 async def run(state: dict) -> dict:
@@ -324,6 +485,12 @@ async def run(state: dict) -> dict:
             if card:
                 break
     cls = state.get("classification") or {}
+    _tres = state.get("tool_result") or {}
+    try:
+        from app.ai_assistant.mcp import outcomes as _oc
+        _outcome = state.get("tool_outcome") or _oc.derive_outcome(_tres, data)
+    except Exception:
+        _outcome = "failed" if not _tres.get("ok") else "unverified"
     hints = {
         "safety": safety, "intent": state.get("intent"),
         "classification": cls,
@@ -331,6 +498,9 @@ async def run(state: dict) -> dict:
         "scope": state.get("scope_hint", ""),
         "clarify_fields": state.get("pending_clarification_fields", []),
         "tool": tool, "tool_status": state.get("tool_status", ""),
+        "tool_outcome": _outcome,
+        "tool_code": _tres.get("code", ""),
+        "tool_error": str(_tres.get("error", ""))[:500],
         "tool_data": json.dumps(data)[:3000],
         "prior_step_data": json.dumps(state.get("step_outputs") or [])[:3000],
         "missing_tool": state.get("missing_tool", {}),
@@ -361,6 +531,16 @@ async def run(state: dict) -> dict:
     booking_proven = (
         bool((state.get("tool_result") or {}).get("ok"))
         and _orch.is_proven_result(tool or state.get("last_tool", ""), data))
+    try:
+        from app.ai_assistant.mcp import outcomes as _oc2
+        _outcome2 = state.get("tool_outcome") or _oc2.derive_outcome(
+            state.get("tool_result") or {}, data)
+    except Exception:
+        _outcome2 = "failed" if not tool_ok else ("success" if booking_proven else "unverified")
+    # Unverified or non-success outcomes are never proof, even if the
+    # strict id/status check passed on stale data.
+    if _outcome2 != "success":
+        booking_proven = False
     has_data = bool(data) and tool_ok
     if await _needs_rewrite(reply, tool_ok, booking_proven, has_data):
         fix = await llm_mod.generate(
@@ -379,6 +559,15 @@ async def run(state: dict) -> dict:
         if fix.content.strip():
             reply = fix.content.strip()
             res = fix
+    # Output normalization (global): user sees only natural language, never
+    # tool calls, JSON payloads, or internal identifiers. Re-check proof
+    # after sanitizing so the fallback can never invent success.
+    reply = sanitize_reply(reply, tool_ok=tool_ok, data=data)
+    if violations(reply, tool_ok, booking_proven, data=data):
+        if not tool_ok:
+            reply = "I couldn't complete that. Could you share a bit more detail so I can help?"
+        else:
+            reply = sanitize_reply("Done — I've completed that for you.", tool_ok=True, data=data)
     db.add(AIMessage(conversation_id=state.get("conversation_id"), role="assistant",
                      content=reply[:4000], latency_ms=int((time.time() - t0) * 1000)))
     db.commit()
@@ -389,10 +578,11 @@ async def run(state: dict) -> dict:
         options = _options(state)
     payload = {}
     if ui:
-        payload["ui"] = ui
+        payload["ui"] = sanitize_payload(ui)
     if card:
-        payload["card"] = card["card"]
-        payload.update({k: v for k, v in card.items() if k != "card"})
+        _clean_card = sanitize_payload(card)
+        payload["card"] = _clean_card["card"]
+        payload.update({k: v for k, v in _clean_card.items() if k != "card"})
     if options:
         payload["options"] = options
     try:

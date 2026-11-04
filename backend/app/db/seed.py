@@ -175,6 +175,15 @@ def _ensure_columns(db: Session):
 
 def run(db: Session):
     _ensure_columns(db)
+    # EHR removal: drop leftover columns/tables on pre-removal databases
+    # (idempotent, never blocks seed).
+    try:
+        from .ehr_removal_migration import ensure_ehr_removed
+        _bind = db.get_bind()
+        if _bind is not None:
+            ensure_ehr_removed(_bind)
+    except Exception:
+        pass
     if db.query(models.Hospital).count() < 3 or db.query(models.Doctor).count() < 6:
         _full_seed(db)
     else:

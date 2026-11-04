@@ -1,7 +1,9 @@
-"""Fail-closed LLM client: Mercury 2.5 primary, gpt-oss-120b fallback.
+"""Fail-closed LLM client: Muse Spark 1.3 primary, Mercury fallback, gpt-oss fallback.
 
-No deterministic rules. No keys / both providers down -> AINotAvailable
+No deterministic rules. No keys / all providers down -> AINotAvailable
 and the API must return 503 ai_unavailable without fabricating a reply.
+All providers are OpenAI-compatible (ChatOpenAI + base_url); keys come
+from env only, never hardcoded.
 """
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ class AINotAvailable(Exception):
     pass
 
 
-FAILURE_MESSAGE = "AI unavailable — configure INCEPTION_API_KEY"
+FAILURE_MESSAGE = "AI unavailable — configure MUSE_SPARK_API_KEY"
 
 
 @dataclass
@@ -27,13 +29,18 @@ class LLMResult:
 def llm_status() -> dict:
     from app.core.config import settings
 
-    primary = bool((settings.INCEPTION_API_KEY or "").strip())
-    fallback = bool((settings.GROQ_API_KEY or "").strip())
+    muse = bool((settings.MUSE_SPARK_API_KEY or "").strip())
+    mercury = bool((settings.INCEPTION_API_KEY or "").strip())
+    gptoss = bool((settings.GROQ_API_KEY or "").strip())
     return {
-        "primary_configured": primary,
-        "fallback_configured": fallback,
-        "primary_model": settings.INCEPTION_MODEL,
-        "fallback_model": settings.GROQ_MODEL,
+        "primary_configured": muse,
+        "fallback_configured": mercury or gptoss,
+        "primary_model": settings.MUSE_SPARK_MODEL,
+        "fallback_model": settings.INCEPTION_MODEL,
+        "fallback2_model": settings.GROQ_MODEL,
+        "muse_configured": muse,
+        "mercury_configured": mercury,
+        "gptoss_configured": gptoss,
     }
 
 
@@ -44,7 +51,20 @@ def _make_client(kind: str):
         from langchain_openai import ChatOpenAI
     except Exception as e:
         raise AINotAvailable(FAILURE_MESSAGE) from e
-    if kind == "primary":
+    if kind in ("muse", "primary"):
+        key = (settings.MUSE_SPARK_API_KEY or "").strip()
+        if not key:
+            return None
+        kwargs: dict = {
+            "model": settings.MUSE_SPARK_MODEL,
+            "api_key": key,
+            "timeout": settings.LLM_TIMEOUT_S,
+            "temperature": 0.4,
+        }
+        if (settings.MUSE_SPARK_BASE_URL or "").strip():
+            kwargs["base_url"] = settings.MUSE_SPARK_BASE_URL.strip()
+        return ChatOpenAI(**kwargs)
+    if kind in ("mercury", "fallback"):
         key = (settings.INCEPTION_API_KEY or "").strip()
         if not key:
             return None
@@ -86,7 +106,7 @@ async def generate(messages: list, system: str = "") -> LLMResult:
         elif isinstance(m, dict) and m.get("content"):
             norm.append((m.get("role", "user"), m["content"]))
     errors: list[str] = []
-    for kind, name in (("primary", None), ("fallback", None)):
+    for kind in ("muse", "mercury", "gptoss"):
         client = _make_client(kind)
         if client is None:
             errors.append(f"{kind}: no key")
@@ -98,7 +118,12 @@ async def generate(messages: list, system: str = "") -> LLMResult:
                 raise RuntimeError("empty reply")
             from app.core.config import settings
 
-            powered = settings.INCEPTION_MODEL if kind == "primary" else settings.GROQ_MODEL
+            if kind == "muse":
+                powered = settings.MUSE_SPARK_MODEL
+            elif kind == "mercury":
+                powered = settings.INCEPTION_MODEL
+            else:
+                powered = settings.GROQ_MODEL
             return LLMResult(content=text, powered_by=powered, latency_ms=int((time.time() - t0) * 1000))
         except Exception as e:
             errors.append(f"{kind}: {type(e).__name__}: {str(e)[:200]}")

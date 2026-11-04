@@ -36,7 +36,7 @@ async def chat(b: ChatIn, db: Session = Depends(get_db), u=Depends(get_current_u
     except AINotAvailable as e:
         import logging as _logging
         _logging.getLogger("careaccess").warning("ai unavailable corr=%s err=%s", corr, str(e)[:500])
-        raise HTTPException(503, f"AI unavailable — configure INCEPTION_API_KEY ({corr})")
+        raise HTTPException(503, f"AI unavailable — configure MUSE_SPARK_API_KEY ({corr})")
     except (ValueError, PermissionError) as e:
         raise HTTPException(400 if isinstance(e, ValueError) else 403, str(e)[:500])
 
@@ -182,4 +182,5 @@ def voice_config(u=Depends(get_current_user)):
     return {"stt_provider": settings.STT_PROVIDER, "stt_model": settings.STT_MODEL,
             "tts_provider": settings.TTS_PROVIDER,
             "stt_configured": bool((settings.GROQ_API_KEY or "").strip()),
-            "brain_primary": settings.INCEPTION_MODEL, "brain_fallback": settings.GROQ_MODEL}
+            "brain_primary": settings.MUSE_SPARK_MODEL, "brain_fallback": settings.INCEPTION_MODEL,
+            "brain_fallback2": settings.GROQ_MODEL}

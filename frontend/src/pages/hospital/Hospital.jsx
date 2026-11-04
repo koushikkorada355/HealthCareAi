@@ -143,7 +143,7 @@ export function DoctorDetail() {
     catch (e) { setMsg(`Could not deactivate: ${e.message}`) }
   }
   if (!d) return <div className="p-8">{msg || 'Loading…'}</div>
-  return <div><PageHead title={`${d.name} #${d.id}`} right={<select className="input !w-auto" value={d.status} onChange={async e => { await api(`/doctors/${id}`, { method: 'PATCH', body: { status: e.target.value } }); setD({ ...d, status: e.target.value }) }}>{['invited', 'active', 'inactive', 'suspended'].map(s => <option key={s}>{s}</option>)}</select>} />
+  return <div><PageHead title={`${d.name} #${d.id}`} right={<select className="input !w-auto" value={d.status} onChange={async e => { try { await api(`/doctors/${id}`, { method: 'PATCH', body: { status: e.target.value } }); load() } catch (err) { setMsg(`Could not update status: ${err.message}`) } }}>{['invited', 'active', 'inactive', 'suspended'].map(s => <option key={s}>{s}</option>)}</select>} />
     {msg && <div className="card p-3 mb-3 text-sm">{msg}</div>}
     <div className="flex items-center gap-4 mb-4"><Avatar name={d.name} size={64} photo={d.photo_url} seed={d.id} plain={false} /><div className="text-sm text-ink-soft">Auto Unsplash photo — no upload needed. Login owned by the doctor since signup.</div></div>
     <div className="grid md:grid-cols-2 gap-4"><Card><div className="font-bold mb-2">Details</div><div className="grid gap-2 text-sm">

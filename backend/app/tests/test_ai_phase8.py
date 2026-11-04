@@ -38,9 +38,11 @@ async def test_llm_fail_closed_no_keys(monkeypatch):
     from app.ai_assistant.services import llm as llm_mod
     from app.core.config import settings
 
+    monkeypatch.setattr(settings, "MUSE_SPARK_API_KEY", "")
     monkeypatch.setattr(settings, "INCEPTION_API_KEY", "")
     monkeypatch.setattr(settings, "GROQ_API_KEY", "")
     assert llm_mod.llm_status()["primary_configured"] is False
+    assert llm_mod.llm_status()["muse_configured"] is False
     with pytest.raises(llm_mod.AINotAvailable):
         await llm_mod.generate([{"role": "user", "content": "hi"}])
 
@@ -48,7 +50,7 @@ async def test_llm_fail_closed_no_keys(monkeypatch):
 def test_mcp_adapter_validation():
     from app.ai_assistant.mcp import adapter
 
-    assert len(adapter.known_tools()) == 34
+    assert len(adapter.known_tools()) == 32
     _, err = adapter.validate("nope", {})
     assert "Unknown capability" in err
     _, err = adapter.validate("create_appointment", {"hospital_id": 1})

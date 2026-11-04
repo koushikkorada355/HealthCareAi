@@ -461,8 +461,12 @@ async def _start_workflow(db, a, user=None, corr="", idem="", conversation_id=No
         raise ValueError("event is required")
     from app.services.workflows import fire_event as _f
     hid = a.get("hospital_id") or getattr(user, "hospital_id", None)
-    _f(db, a["event"], hid, {"conversation_id": conversation_id, **(a.get("payload") or {})}, corr)
-    return {"event": a["event"], "fired": True}
+    res = _f(db, a["event"], hid, {"conversation_id": conversation_id, **(a.get("payload") or {})}, corr) or {}
+    if not res.get("matched"):
+        raise ValueError(f"No active workflow for event {a['event']}")
+    if res.get("failed") and res["failed"] >= res["matched"]:
+        raise ValueError(f"Workflow {a['event']} failed")
+    return {"event": a["event"], "fired": True, "matched": res.get("matched", 0)}
 
 
 async def _get_context(db, a, user=None, corr="", idem="", conversation_id=None):
@@ -493,9 +497,11 @@ async def _transfer_to_human(db, a, user=None, corr="", idem="", conversation_id
         except Exception:
             ap = None
     hid = (ap.hospital_id if ap else None) or getattr(user, "hospital_id", None)
-    _ops(db, "human.escalation", f"Escalated conv {conversation_id}: {a.get('summary', '')[:200]}",
-         "warn", hid, corr, {"reason": a.get("reason", "human_escalation")})
-    return {"escalated": True, "queue": "care_team"}
+    row = _ops(db, "human.escalation", f"Escalated conv {conversation_id}: {a.get('summary', '')[:200]}",
+               "warn", hid, corr, {"reason": a.get("reason", "human_escalation")})
+    if row is None:
+        raise ValueError("Could not log the tracked request; please retry")
+    return {"escalated": True, "queue": "care_team", "rec_id": row.id}
 
 
 async def _get_reviews(db, a, user=None, corr="", idem="", conversation_id=None):

@@ -44,12 +44,12 @@ def validate(name: str, args: dict | None) -> tuple[dict, str]:
     from app.ai_assistant.mcp import registry as reg
 
     if name not in reg._IMPL:
-        return {}, f"Unknown capability {name}."
+        return {}, f"__UNSUPPORTED__ Unknown capability {name}."
     schema = reg.get_schema(name)
     args = dict(args or {})
     missing = [k for k in schema.get("required", []) if args.get(k) in (None, "")]
     if missing:
-        return {}, f"Missing required arguments: {', '.join(missing)}."
+        return {}, f"__MISSING__ Missing required arguments: {', '.join(missing)}."
     coerced = dict(args)
     for k in schema.get("int_args", []):
         if coerced.get(k) in (None, ""):
@@ -69,6 +69,14 @@ async def call(db, name: str, args: dict | None, *, user, conversation_id=None,
 
     coerced, error = validate(name, args)
     if error:
+        if error.startswith("__MISSING__"):
+            return {"ok": False, "code": "missing",
+                    "error": error.replace("__MISSING__", "").strip(),
+                    "latency_ms": 0, "tool_call_id": tool_call_id}
+        if error.startswith("__UNSUPPORTED__"):
+            return {"ok": False, "code": "unsupported",
+                    "error": error.replace("__UNSUPPORTED__", "").strip(),
+                    "latency_ms": 0, "tool_call_id": tool_call_id}
         return {"ok": False, "code": "invalid", "error": error,
                 "latency_ms": 0, "tool_call_id": tool_call_id}
     if timeout_s is None:

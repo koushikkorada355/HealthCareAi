@@ -29,7 +29,7 @@ async def invoke(db, name: str, args: dict, *, user, conversation_id=None,
         return {"ok": False, "code": "denied", "error": str(e)[:500],
                 "latency_ms": int((time.time() - t0) * 1000)}
     except asyncio.TimeoutError:
-        return {"ok": False, "code": "timeout",
+        return {"ok": False, "code": "pending",
                 "error": "Capability timed out — nothing was confirmed.",
                 "latency_ms": int((time.time() - t0) * 1000)}
     except ValueError as e:

@@ -30,6 +30,13 @@ async def lifespan(app: FastAPI):
         ensure_exclusion(engine)
     except Exception:
         logger.exception("exclusion constraint setup failed")
+    # EHR removal: drop leftover columns/tables on pre-removal databases
+    # (idempotent IF EXISTS DDL, never blocks boot).
+    try:
+        from .db.ehr_removal_migration import ensure_ehr_removed
+        ensure_ehr_removed(engine)
+    except Exception:
+        logger.exception("ehr removal migration failed")
     if os.getenv("SEED_ON_STARTUP", str(settings.SEED_ON_STARTUP)).lower() in ("1", "true", "yes"):
         try:
             from .db.session import SessionLocal
